@@ -20,100 +20,52 @@ contract CollateralRegistry is
     UUPSUpgradeable,
     ICollateralRegistry
 {
-    uint256 public immutable totalCollaterals;
-
-    IERC20Metadata internal immutable token0;
-    IERC20Metadata internal immutable token1;
-    IERC20Metadata internal immutable token2;
-    IERC20Metadata internal immutable token3;
-    IERC20Metadata internal immutable token4;
-    IERC20Metadata internal immutable token5;
-    IERC20Metadata internal immutable token6;
-    IERC20Metadata internal immutable token7;
-    IERC20Metadata internal immutable token8;
-    IERC20Metadata internal immutable token9;
-
-    ITroveManager internal immutable troveManager0;
-    ITroveManager internal immutable troveManager1;
-    ITroveManager internal immutable troveManager2;
-    ITroveManager internal immutable troveManager3;
-    ITroveManager internal immutable troveManager4;
-    ITroveManager internal immutable troveManager5;
-    ITroveManager internal immutable troveManager6;
-    ITroveManager internal immutable troveManager7;
-    ITroveManager internal immutable troveManager8;
-    ITroveManager internal immutable troveManager9;
-
     IUSDXToken public immutable usdxToken;
+
+    uint256 public totalCollaterals;
+
+    IERC20Metadata[] internal tokens;
+    ITroveManager[] internal troveManagers;
 
     uint256 public baseRate;
 
     // The timestamp of the latest fee operation (redemption or new USDX issuance)
-    uint256 public lastFeeOperationTime = block.timestamp;
+    uint256 public lastFeeOperationTime;
 
     event BaseRateUpdated(uint256 _baseRate);
     event LastFeeOpTimeUpdated(uint256 _lastFeeOpTime);
 
-    constructor(
-        IUSDXToken _usdxToken,
+    constructor(IUSDXToken _usdxToken) {
+        _disableInitializers();
+        usdxToken = _usdxToken;
+    }
+
+    function initialize(
+        address initialOwner,
         IERC20Metadata[] memory _tokens,
         ITroveManager[] memory _troveManagers
-    ) {
-        _disableInitializers();
-
+    ) public initializer {
         uint256 numTokens = _tokens.length;
         require(numTokens > 0, "Collateral list cannot be empty");
-        require(numTokens <= 10, "Collateral list too long");
+        require(
+            numTokens == _troveManagers.length,
+            "Tokens and TroveManagers length mismatch"
+        );
+
         totalCollaterals = numTokens;
 
-        usdxToken = _usdxToken;
-
-        token0 = _tokens[0];
-        token1 = numTokens > 1 ? _tokens[1] : IERC20Metadata(address(0));
-        token2 = numTokens > 2 ? _tokens[2] : IERC20Metadata(address(0));
-        token3 = numTokens > 3 ? _tokens[3] : IERC20Metadata(address(0));
-        token4 = numTokens > 4 ? _tokens[4] : IERC20Metadata(address(0));
-        token5 = numTokens > 5 ? _tokens[5] : IERC20Metadata(address(0));
-        token6 = numTokens > 6 ? _tokens[6] : IERC20Metadata(address(0));
-        token7 = numTokens > 7 ? _tokens[7] : IERC20Metadata(address(0));
-        token8 = numTokens > 8 ? _tokens[8] : IERC20Metadata(address(0));
-        token9 = numTokens > 9 ? _tokens[9] : IERC20Metadata(address(0));
-
-        troveManager0 = _troveManagers[0];
-        troveManager1 = numTokens > 1
-            ? _troveManagers[1]
-            : ITroveManager(address(0));
-        troveManager2 = numTokens > 2
-            ? _troveManagers[2]
-            : ITroveManager(address(0));
-        troveManager3 = numTokens > 3
-            ? _troveManagers[3]
-            : ITroveManager(address(0));
-        troveManager4 = numTokens > 4
-            ? _troveManagers[4]
-            : ITroveManager(address(0));
-        troveManager5 = numTokens > 5
-            ? _troveManagers[5]
-            : ITroveManager(address(0));
-        troveManager6 = numTokens > 6
-            ? _troveManagers[6]
-            : ITroveManager(address(0));
-        troveManager7 = numTokens > 7
-            ? _troveManagers[7]
-            : ITroveManager(address(0));
-        troveManager8 = numTokens > 8
-            ? _troveManagers[8]
-            : ITroveManager(address(0));
-        troveManager9 = numTokens > 9
-            ? _troveManagers[9]
-            : ITroveManager(address(0));
+        // Copy arrays to storage
+        for (uint256 i = 0; i < numTokens; i++) {
+            tokens.push(_tokens[i]);
+            troveManagers.push(_troveManagers[i]);
+        }
 
         // Initialize the baseRate state variable
         baseRate = INITIAL_BASE_RATE;
         emit BaseRateUpdated(INITIAL_BASE_RATE);
-    }
 
-    function initialize(address initialOwner) public initializer {
+        lastFeeOperationTime = block.timestamp;
+
         __Ownable_init();
         transferOwnership(initialOwner);
     }
@@ -373,33 +325,15 @@ contract CollateralRegistry is
     // getters
 
     function getToken(uint256 _index) external view returns (IERC20Metadata) {
-        if (_index == 0) return token0;
-        else if (_index == 1) return token1;
-        else if (_index == 2) return token2;
-        else if (_index == 3) return token3;
-        else if (_index == 4) return token4;
-        else if (_index == 5) return token5;
-        else if (_index == 6) return token6;
-        else if (_index == 7) return token7;
-        else if (_index == 8) return token8;
-        else if (_index == 9) return token9;
-        else revert("Invalid index");
+        require(_index < totalCollaterals, "Invalid index");
+        return tokens[_index];
     }
 
     function getTroveManager(
         uint256 _index
     ) public view returns (ITroveManager) {
-        if (_index == 0) return troveManager0;
-        else if (_index == 1) return troveManager1;
-        else if (_index == 2) return troveManager2;
-        else if (_index == 3) return troveManager3;
-        else if (_index == 4) return troveManager4;
-        else if (_index == 5) return troveManager5;
-        else if (_index == 6) return troveManager6;
-        else if (_index == 7) return troveManager7;
-        else if (_index == 8) return troveManager8;
-        else if (_index == 9) return troveManager9;
-        else revert("Invalid index");
+        require(_index < totalCollaterals, "Invalid index");
+        return troveManagers[_index];
     }
 
     // require functions
