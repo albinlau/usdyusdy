@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: MIT
+
+pragma solidity ^0.8.0;
+
+interface IDefaultPool {
+    function troveManagerAddress() external view returns (address);
+
+    function activePoolAddress() external view returns (address);
+
+    // --- Functions ---
+    function getCollBalance() external view returns (uint256);
+
+    function getUSDXDebt() external view returns (uint256);
+
+    function sendCollToActivePool(uint256 _amount) external;
+
+    function receiveColl(uint256 _amount) external;
+
+    function increaseUSDXDebt(uint256 _amount) external;
+
+    function decreaseUSDXDebt(uint256 _amount) external;
+}
