@@ -13,6 +13,7 @@ import "./Interfaces/ITroveManager.sol";
 import "./Interfaces/IUSDXToken.sol";
 import "./Interfaces/ICollSurplusPool.sol";
 import "./Interfaces/ISortedTroves.sol";
+import "./Interfaces/ICollateralConfig.sol";
 import "./Dependencies/LiquityBase.sol";
 import "./Dependencies/AddRemoveManagers.sol";
 import "./Types/LatestTroveData.sol";
@@ -37,6 +38,8 @@ contract BorrowerOperations is
     IUSDXToken internal usdxToken;
     // A doubly linked list of Troves, sorted by their collateral ratios
     ISortedTroves internal sortedTroves;
+    // Collateral configuration (freeze, pause, protocol interest, treasury)
+    ICollateralConfig internal collateralConfig;
     // Wrapped ETH for liquidation reserve (gas compensation)
     IWETH internal immutable WETH;
 
@@ -196,6 +199,7 @@ contract BorrowerOperations is
         collSurplusPool = _addressesRegistry.collSurplusPool();
         sortedTroves = _addressesRegistry.sortedTroves();
         usdxToken = _addressesRegistry.usdxToken();
+        collateralConfig = _addressesRegistry.collateralConfig();
 
         emit TroveManagerAddressChanged(address(troveManager));
         emit GasPoolAddressChanged(gasPoolAddress);
@@ -337,6 +341,8 @@ contract BorrowerOperations is
         TroveChange memory _change
     ) internal returns (uint256) {
         _requireIsNotShutDown();
+        // Check collateral is not paused or frozen for new operations
+        collateralConfig.requireNotPausedOrFrozen(true);
 
         LocalVariables_openTrove memory vars;
 
@@ -620,6 +626,12 @@ contract BorrowerOperations is
         TroveChange memory _troveChange
     ) internal {
         _requireIsNotShutDown();
+
+        // Check collateral config based on operation type
+        // Increase operations: adding collateral or borrowing more debt
+        bool isIncrease = _troveChange.collIncrease > 0 ||
+            _troveChange.debtIncrease > 0;
+        collateralConfig.requireNotPausedOrFrozen(isIncrease);
 
         LocalVariables_adjustTrove memory vars;
         vars.activePool = activePool;

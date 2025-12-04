@@ -33,6 +33,7 @@ contract AddressesRegistry is
     ICollateralRegistry public collateralRegistry;
     IUSDXToken public usdxToken;
     IWETH public WETH;
+    ICollateralConfig public collateralConfig;
 
     // Critical system collateral ratio. If the system's total collateral ratio (TCR) falls below the CCR, some borrowing operation restrictions are applied
     uint256 public immutable CCR;
@@ -75,6 +76,7 @@ contract AddressesRegistry is
     event CollateralRegistryAddressChanged(address _collateralRegistryAddress);
     event USDXTokenAddressChanged(address _usdxTokenAddress);
     event WETHAddressChanged(address _wethAddress);
+    event CollateralConfigAddressChanged(address _collateralConfigAddress);
 
     constructor(
         uint256 _ccr,
@@ -134,6 +136,7 @@ contract AddressesRegistry is
         collateralRegistry = _vars.collateralRegistry;
         usdxToken = _vars.usdxToken;
         WETH = _vars.WETH;
+        collateralConfig = _vars.collateralConfig;
 
         emit CollTokenAddressChanged(address(_vars.collToken));
         emit BorrowerOperationsAddressChanged(
@@ -157,5 +160,6 @@ contract AddressesRegistry is
         );
         emit USDXTokenAddressChanged(address(_vars.usdxToken));
         emit WETHAddressChanged(address(_vars.WETH));
+        emit CollateralConfigAddressChanged(address(_vars.collateralConfig));
     }
 }

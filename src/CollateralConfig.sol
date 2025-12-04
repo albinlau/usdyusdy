@@ -1,0 +1,186 @@
+// SPDX-License-Identifier: BUSL-1.1
+
+pragma solidity 0.8.28;
+
+import "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
+import "./Interfaces/ICollateralConfig.sol";
+
+/**
+ * @title CollateralConfig
+ * @notice Manages configuration parameters for a specific collateral type
+ * @dev Each collateral has its own instance of this contract
+ */
+contract CollateralConfig is
+    Initializable,
+    OwnableUpgradeable,
+    UUPSUpgradeable,
+    ICollateralConfig
+{
+    // --- State Variables ---
+
+    Config private config;
+
+    // Constants
+    uint256 private constant DECIMAL_PRECISION = 1e18;
+    uint256 private constant MAX_COLL_ANNUAL_INTEREST_RATE = 1e18; // 100%
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    /**
+     * @notice Initialize the CollateralConfig contract
+     * @param _initialOwner Owner address (typically governance or multisig)
+     * @param _treasury Initial treasury address
+     */
+    function initialize(
+        address _initialOwner,
+        address _treasury
+    ) public initializer {
+        __Ownable_init();
+        transferOwnership(_initialOwner);
+
+        _requireValidAddress(_treasury);
+
+        config = Config({
+            isFrozen: false,
+            isPaused: false,
+            annualInterestRate: 0,
+            treasury: _treasury
+        });
+
+        emit ConfigUpdated(false, false, 0, _treasury);
+    }
+
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyOwner {}
+
+    // --- Setter Functions (Owner only) ---
+
+    /**
+     * @notice Set complete config
+     */
+    function setConfig(
+        bool _isFrozen,
+        bool _isPaused,
+        uint256 _annualInterestRate,
+        address _treasury
+    ) external override onlyOwner {
+        _requireValidAddress(_treasury);
+        _requireValidInterestRate(_annualInterestRate);
+
+        config.isFrozen = _isFrozen;
+        config.isPaused = _isPaused;
+        config.annualInterestRate = _annualInterestRate;
+        config.treasury = _treasury;
+
+        emit ConfigUpdated(
+            _isFrozen,
+            _isPaused,
+            _annualInterestRate,
+            _treasury
+        );
+    }
+
+    /**
+     * @notice Freeze/unfreeze collateral (prevents new operations)
+     */
+    function setFrozen(bool _frozen) external override onlyOwner {
+        config.isFrozen = _frozen;
+        emit Frozen(_frozen);
+    }
+
+    /**
+     * @notice Pause/unpause collateral (prevents all operations except close)
+     */
+    function setPaused(bool _paused) external override onlyOwner {
+        config.isPaused = _paused;
+        emit Paused(_paused);
+    }
+
+    /**
+     * @notice Update collateral annual interest rate
+     * @param _rate Annual interest rate in 18 decimals (e.g., 5e16 = 5%)
+     */
+    function setCollAnnualInterestRate(
+        uint256 _rate
+    ) external override onlyOwner {
+        _requireValidInterestRate(_rate);
+        config.annualInterestRate = _rate;
+        emit AnnualInterestRateUpdated(_rate);
+    }
+
+    /**
+     * @notice Update treasury address
+     */
+    function setTreasury(address _treasury) external override onlyOwner {
+        _requireValidAddress(_treasury);
+        config.treasury = _treasury;
+        emit TreasuryUpdated(_treasury);
+    }
+
+    // --- Getter Functions (View) ---
+
+    function getConfig() external view override returns (Config memory) {
+        return config;
+    }
+
+    function isFrozen() external view override returns (bool) {
+        return config.isFrozen;
+    }
+
+    function isPaused() external view override returns (bool) {
+        return config.isPaused;
+    }
+
+    function getCollAnnualInterestRate()
+        external
+        view
+        override
+        returns (uint256)
+    {
+        return config.annualInterestRate;
+    }
+
+    function getTreasury() external view override returns (address) {
+        return config.treasury;
+    }
+
+    // --- Check Functions ---
+
+    /**
+     * @notice Check if operations are allowed
+     * @param _isIncrease True for operations that increase exposure (open, add collateral/debt)
+     * @dev Reverts if:
+     *      - Collateral is paused (all operations blocked except close)
+     *      - Collateral is frozen and operation increases exposure
+     */
+    function requireNotPausedOrFrozen(bool _isIncrease) external view override {
+        if (config.isPaused) {
+            revert CollateralPaused();
+        }
+
+        if (_isIncrease && config.isFrozen) {
+            revert CollateralFrozen();
+        }
+    }
+
+    // --- Internal Functions ---
+
+    function _requireValidAddress(address _address) internal pure {
+        if (_address == address(0)) {
+            revert InvalidAddress();
+        }
+    }
+
+    function _requireValidInterestRate(uint256 _rate) internal pure {
+        // Max 100% annual rate (1e18 = 100%)
+        if (_rate > MAX_COLL_ANNUAL_INTEREST_RATE) {
+            revert InvalidInterestRate();
+        }
+    }
+}
