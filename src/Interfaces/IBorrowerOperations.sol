@@ -26,7 +26,6 @@ interface IBorrowerOperations is ILiquityBase, IAddRemoveManagers {
         uint256 _upperHint,
         uint256 _lowerHint,
         uint256 _annualInterestRate,
-        uint256 _maxUpfrontFee,
         address _addManager,
         address _removeManager,
         address _receiver
@@ -40,7 +39,6 @@ interface IBorrowerOperations is ILiquityBase, IAddRemoveManagers {
         uint256 upperHint;
         uint256 lowerHint;
         address interestBatchManager;
-        uint256 maxUpfrontFee;
         address addManager;
         address removeManager;
         address receiver;
@@ -54,11 +52,7 @@ interface IBorrowerOperations is ILiquityBase, IAddRemoveManagers {
 
     function withdrawColl(uint256 _troveId, uint256 _amount) external;
 
-    function withdrawUSDX(
-        uint256 _troveId,
-        uint256 _amount,
-        uint256 _maxUpfrontFee
-    ) external;
+    function withdrawUSDX(uint256 _troveId, uint256 _amount) external;
 
     function repayUSDX(uint256 _troveId, uint256 _amount) external;
 
@@ -69,8 +63,7 @@ interface IBorrowerOperations is ILiquityBase, IAddRemoveManagers {
         uint256 _collChange,
         bool _isCollIncrease,
         uint256 _debtChange,
-        bool isDebtIncrease,
-        uint256 _maxUpfrontFee
+        bool isDebtIncrease
     ) external;
 
     function adjustZombieTrove(
@@ -80,16 +73,14 @@ interface IBorrowerOperations is ILiquityBase, IAddRemoveManagers {
         uint256 _usdxChange,
         bool _isDebtIncrease,
         uint256 _upperHint,
-        uint256 _lowerHint,
-        uint256 _maxUpfrontFee
+        uint256 _lowerHint
     ) external;
 
     function adjustTroveInterestRate(
         uint256 _troveId,
         uint256 _newAnnualInterestRate,
         uint256 _upperHint,
-        uint256 _lowerHint,
-        uint256 _maxUpfrontFee
+        uint256 _lowerHint
     ) external;
 
     function applyPendingDebt(
@@ -133,7 +124,6 @@ interface IBorrowerOperations is ILiquityBase, IAddRemoveManagers {
         uint256 _newAnnualInterestRate,
         uint256 _upperHint,
         uint256 _lowerHint,
-        uint256 _maxUpfrontFee,
         uint256 _minInterestRateChangePeriod
     ) external;
 
@@ -159,8 +149,7 @@ interface IBorrowerOperations is ILiquityBase, IAddRemoveManagers {
     function setBatchManagerAnnualInterestRate(
         uint128 _newAnnualInterestRate,
         uint256 _upperHint,
-        uint256 _lowerHint,
-        uint256 _maxUpfrontFee
+        uint256 _lowerHint
     ) external;
 
     function interestBatchManagerOf(
@@ -175,8 +164,7 @@ interface IBorrowerOperations is ILiquityBase, IAddRemoveManagers {
         uint256 _troveId,
         address _newBatchManager,
         uint256 _upperHint,
-        uint256 _lowerHint,
-        uint256 _maxUpfrontFee
+        uint256 _lowerHint
     ) external;
 
     function kickFromBatch(
@@ -189,8 +177,7 @@ interface IBorrowerOperations is ILiquityBase, IAddRemoveManagers {
         uint256 _troveId,
         uint256 _newAnnualInterestRate,
         uint256 _upperHint,
-        uint256 _lowerHint,
-        uint256 _maxUpfrontFee
+        uint256 _lowerHint
     ) external;
 
     function switchBatchManager(
@@ -199,7 +186,6 @@ interface IBorrowerOperations is ILiquityBase, IAddRemoveManagers {
         uint256 _removeLowerHint,
         address _newBatchManager,
         uint256 _addUpperHint,
-        uint256 _addLowerHint,
-        uint256 _maxUpfrontFee
+        uint256 _addLowerHint
     ) external;
 }

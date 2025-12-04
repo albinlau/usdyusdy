@@ -367,7 +367,6 @@ contract TroveManager is
             _operation: Operation.liquidate,
             _annualInterestRate: 0,
             _debtIncreaseFromRedist: trove.redistUSDXDebtGain,
-            _debtIncreaseFromUpfrontFee: 0,
             _debtChangeFromOperation: -int256(trove.entireDebt),
             _collIncreaseFromRedist: trove.redistCollGain,
             _collChangeFromOperation: -int256(trove.entireColl)
@@ -381,8 +380,7 @@ contract TroveManager is
                 _coll: batches[batchAddress].coll,
                 _annualInterestRate: batch.annualInterestRate,
                 _annualManagementFee: batch.annualManagementFee,
-                _totalDebtShares: batches[batchAddress].totalDebtShares,
-                _debtIncreaseFromUpfrontFee: 0
+                _totalDebtShares: batches[batchAddress].totalDebtShares
             });
         }
     }
@@ -807,7 +805,6 @@ contract TroveManager is
             _operation: Operation.redeemCollateral,
             _annualInterestRate: _singleRedemption.trove.annualInterestRate,
             _debtIncreaseFromRedist: _singleRedemption.trove.redistUSDXDebtGain,
-            _debtIncreaseFromUpfrontFee: 0,
             _debtChangeFromOperation: -int256(_singleRedemption.usdxLot),
             _collIncreaseFromRedist: _singleRedemption.trove.redistCollGain,
             _collChangeFromOperation: -int256(_singleRedemption.collLot)
@@ -824,8 +821,7 @@ contract TroveManager is
                     .batch
                     .annualManagementFee,
                 _totalDebtShares: batches[_singleRedemption.batchAddress]
-                    .totalDebtShares,
-                _debtIncreaseFromUpfrontFee: 0
+                    .totalDebtShares
             });
         }
 
@@ -1585,9 +1581,7 @@ contract TroveManager is
         uint256 newStake = _computeNewStake(_troveChange.collIncrease);
 
         // Trove memory newTrove;
-        Troves[_troveId].debt =
-            _troveChange.debtIncrease +
-            _troveChange.upfrontFee;
+        Troves[_troveId].debt = _troveChange.debtIncrease;
         Troves[_troveId].coll = _troveChange.collIncrease;
         Troves[_troveId].stake = newStake;
         Troves[_troveId].status = Status.active;
@@ -1609,7 +1603,7 @@ contract TroveManager is
 
         emit TroveUpdated({
             _troveId: _troveId,
-            _debt: _troveChange.debtIncrease + _troveChange.upfrontFee,
+            _debt: _troveChange.debtIncrease,
             _coll: _troveChange.collIncrease,
             _stake: newStake,
             _annualInterestRate: _annualInterestRate,
@@ -1622,7 +1616,6 @@ contract TroveManager is
             _operation: Operation.openTrove,
             _annualInterestRate: _annualInterestRate,
             _debtIncreaseFromRedist: 0,
-            _debtIncreaseFromUpfrontFee: _troveChange.upfrontFee,
             _debtChangeFromOperation: int256(_troveChange.debtIncrease),
             _collIncreaseFromRedist: 0,
             _collChangeFromOperation: int256(_troveChange.collIncrease)
@@ -1687,7 +1680,6 @@ contract TroveManager is
             _operation: Operation.openTroveAndJoinBatch,
             _annualInterestRate: batches[_batchAddress].annualInterestRate,
             _debtIncreaseFromRedist: 0,
-            _debtIncreaseFromUpfrontFee: _troveChange.upfrontFee,
             _debtChangeFromOperation: int256(_troveChange.debtIncrease),
             _collIncreaseFromRedist: 0,
             _collChangeFromOperation: int256(_troveChange.collIncrease)
@@ -1700,10 +1692,7 @@ contract TroveManager is
             _coll: batches[_batchAddress].coll,
             _annualInterestRate: batches[_batchAddress].annualInterestRate,
             _annualManagementFee: batches[_batchAddress].annualManagementFee,
-            _totalDebtShares: batches[_batchAddress].totalDebtShares,
-            // Although the Trove joining the batch pays an upfront fee,
-            // it is an individual fee, so we don't include it here
-            _debtIncreaseFromUpfrontFee: 0
+            _totalDebtShares: batches[_batchAddress].totalDebtShares
         });
     }
 
@@ -1753,7 +1742,6 @@ contract TroveManager is
             _operation: Operation.adjustTroveInterestRate,
             _annualInterestRate: _newAnnualInterestRate,
             _debtIncreaseFromRedist: _troveChange.appliedRedistUSDXDebtGain,
-            _debtIncreaseFromUpfrontFee: _troveChange.upfrontFee,
             _debtChangeFromOperation: 0,
             _collIncreaseFromRedist: _troveChange.appliedRedistCollGain,
             _collChangeFromOperation: 0
@@ -1796,7 +1784,6 @@ contract TroveManager is
             _operation: Operation.adjustTrove,
             _annualInterestRate: Troves[_troveId].annualInterestRate,
             _debtIncreaseFromRedist: _troveChange.appliedRedistUSDXDebtGain,
-            _debtIncreaseFromUpfrontFee: _troveChange.upfrontFee,
             _debtChangeFromOperation: int256(_troveChange.debtIncrease) -
                 int256(_troveChange.debtDecrease),
             _collIncreaseFromRedist: _troveChange.appliedRedistCollGain,
@@ -1842,7 +1829,6 @@ contract TroveManager is
             _operation: Operation.closeTrove,
             _annualInterestRate: 0,
             _debtIncreaseFromRedist: _troveChange.appliedRedistUSDXDebtGain,
-            _debtIncreaseFromUpfrontFee: _troveChange.upfrontFee,
             _debtChangeFromOperation: int256(_troveChange.debtIncrease) -
                 int256(_troveChange.debtDecrease),
             _collIncreaseFromRedist: _troveChange.appliedRedistCollGain,
@@ -1859,8 +1845,7 @@ contract TroveManager is
                 _annualInterestRate: batches[_batchAddress].annualInterestRate,
                 _annualManagementFee: batches[_batchAddress]
                     .annualManagementFee,
-                _totalDebtShares: batches[_batchAddress].totalDebtShares,
-                _debtIncreaseFromUpfrontFee: 0
+                _totalDebtShares: batches[_batchAddress].totalDebtShares
             });
         }
     }
@@ -1936,7 +1921,7 @@ contract TroveManager is
         TroveChange memory _troveChange,
         address _batchAddress,
         uint256 _newBatchColl, // without trove change
-        uint256 _newBatchDebt // entire (with interest, batch fee), but without trove change nor upfront fee nor redistribution
+        uint256 _newBatchDebt // entire (with interest, batch fee), but without trove change nor redistribution
     ) external {
         _requireCallerIsBorrowerOperations();
 
@@ -1978,7 +1963,6 @@ contract TroveManager is
             _operation: Operation.adjustTrove,
             _annualInterestRate: batches[_batchAddress].annualInterestRate,
             _debtIncreaseFromRedist: _troveChange.appliedRedistUSDXDebtGain,
-            _debtIncreaseFromUpfrontFee: _troveChange.upfrontFee,
             _debtChangeFromOperation: int256(_troveChange.debtIncrease) -
                 int256(_troveChange.debtDecrease),
             _collIncreaseFromRedist: _troveChange.appliedRedistCollGain,
@@ -1993,10 +1977,7 @@ contract TroveManager is
             _coll: batches[_batchAddress].coll,
             _annualInterestRate: batches[_batchAddress].annualInterestRate,
             _annualManagementFee: batches[_batchAddress].annualManagementFee,
-            _totalDebtShares: batches[_batchAddress].totalDebtShares,
-            // Although the Trove being adjusted may pay an upfront fee,
-            // it is an individual fee, so we don't include it here
-            _debtIncreaseFromUpfrontFee: 0
+            _totalDebtShares: batches[_batchAddress].totalDebtShares
         });
     }
 
@@ -2033,8 +2014,7 @@ contract TroveManager is
                 _annualInterestRate: batches[_batchAddress].annualInterestRate,
                 _annualManagementFee: batches[_batchAddress]
                     .annualManagementFee,
-                _totalDebtShares: batches[_batchAddress].totalDebtShares,
-                _debtIncreaseFromUpfrontFee: 0
+                _totalDebtShares: batches[_batchAddress].totalDebtShares
             });
         } else {
             Troves[_troveId].debt = _newTroveDebt;
@@ -2064,7 +2044,6 @@ contract TroveManager is
             _operation: Operation.applyPendingDebt,
             _annualInterestRate: Troves[_troveId].annualInterestRate,
             _debtIncreaseFromRedist: _troveChange.appliedRedistUSDXDebtGain,
-            _debtIncreaseFromUpfrontFee: _troveChange.upfrontFee,
             _debtChangeFromOperation: int256(_troveChange.debtIncrease) -
                 int256(_troveChange.debtDecrease),
             _collIncreaseFromRedist: _troveChange.appliedRedistCollGain,
@@ -2094,8 +2073,7 @@ contract TroveManager is
             _coll: 0,
             _annualInterestRate: _annualInterestRate,
             _annualManagementFee: _annualManagementFee,
-            _totalDebtShares: 0,
-            _debtIncreaseFromUpfrontFee: 0
+            _totalDebtShares: 0
         });
     }
 
@@ -2119,8 +2097,7 @@ contract TroveManager is
             _coll: _newColl,
             _annualInterestRate: batches[_batchAddress].annualInterestRate,
             _annualManagementFee: _newAnnualManagementFee,
-            _totalDebtShares: batches[_batchAddress].totalDebtShares,
-            _debtIncreaseFromUpfrontFee: 0
+            _totalDebtShares: batches[_batchAddress].totalDebtShares
         });
     }
 
@@ -2128,8 +2105,7 @@ contract TroveManager is
         address _batchAddress,
         uint256 _newColl,
         uint256 _newDebt,
-        uint256 _newAnnualInterestRate,
-        uint256 _upfrontFee
+        uint256 _newAnnualInterestRate
     ) external {
         _requireCallerIsBorrowerOperations();
 
@@ -2148,8 +2124,7 @@ contract TroveManager is
             _coll: _newColl,
             _annualInterestRate: _newAnnualInterestRate,
             _annualManagementFee: batches[_batchAddress].annualManagementFee,
-            _totalDebtShares: batches[_batchAddress].totalDebtShares,
-            _debtIncreaseFromUpfrontFee: _upfrontFee
+            _totalDebtShares: batches[_batchAddress].totalDebtShares
         });
     }
 
@@ -2179,8 +2154,7 @@ contract TroveManager is
             _troveChange.appliedRedistCollGain;
         _troveChange.debtIncrease =
             _params.troveDebt -
-            _troveChange.appliedRedistUSDXDebtGain -
-            _troveChange.upfrontFee;
+            _troveChange.appliedRedistUSDXDebtGain;
         assert(_params.troveDebt > 0);
         _updateBatchShares(
             _params.troveId,
@@ -2214,7 +2188,6 @@ contract TroveManager is
             _annualInterestRate: batches[_params.newBatchAddress]
                 .annualInterestRate,
             _debtIncreaseFromRedist: _troveChange.appliedRedistUSDXDebtGain,
-            _debtIncreaseFromUpfrontFee: _troveChange.upfrontFee,
             _debtChangeFromOperation: 0,
             _collIncreaseFromRedist: _troveChange.appliedRedistCollGain,
             _collChangeFromOperation: 0
@@ -2229,10 +2202,7 @@ contract TroveManager is
                 .annualInterestRate,
             _annualManagementFee: batches[_params.newBatchAddress]
                 .annualManagementFee,
-            _totalDebtShares: batches[_params.newBatchAddress].totalDebtShares,
-            // Although the Trove joining the batch may pay an upfront fee,
-            // it is an individual fee, so we don't include it here
-            _debtIncreaseFromUpfrontFee: 0
+            _totalDebtShares: batches[_params.newBatchAddress].totalDebtShares
         });
     }
 
@@ -2243,14 +2213,13 @@ contract TroveManager is
         TroveChange memory _troveChange,
         uint256 _newTroveDebt, // entire, with interest, batch fee and redistribution
         uint256 _batchColl, // without trove change
-        uint256 _batchDebt, // entire (with interest, batch fee), but without trove change, nor upfront fee nor redist
+        uint256 _batchDebt, // entire (with interest, batch fee), but without trove change, nor redist
         bool _checkBatchSharesRatio // whether we do the check on the resulting ratio inside the func call
     ) internal {
         // Debt
         uint256 currentBatchDebtShares = batches[_batchAddress].totalDebtShares;
         uint256 batchDebtSharesDelta;
         uint256 debtIncrease = _troveChange.debtIncrease +
-            _troveChange.upfrontFee +
             _troveChange.appliedRedistUSDXDebtGain;
         uint256 debtDecrease;
         if (debtIncrease > _troveChange.debtDecrease) {
@@ -2407,7 +2376,6 @@ contract TroveManager is
             _operation: Operation.removeFromBatch,
             _annualInterestRate: _newAnnualInterestRate,
             _debtIncreaseFromRedist: _troveChange.appliedRedistUSDXDebtGain,
-            _debtIncreaseFromUpfrontFee: _troveChange.upfrontFee,
             _debtChangeFromOperation: 0,
             _collIncreaseFromRedist: _troveChange.appliedRedistCollGain,
             _collChangeFromOperation: 0
@@ -2420,10 +2388,7 @@ contract TroveManager is
             _coll: batches[_batchAddress].coll,
             _annualInterestRate: batches[_batchAddress].annualInterestRate,
             _annualManagementFee: batches[_batchAddress].annualManagementFee,
-            _totalDebtShares: batches[_batchAddress].totalDebtShares,
-            // Although the Trove leaving the batch may pay an upfront fee,
-            // it is an individual fee, so we don't include it here
-            _debtIncreaseFromUpfrontFee: 0
+            _totalDebtShares: batches[_batchAddress].totalDebtShares
         });
     }
 
@@ -2444,7 +2409,6 @@ contract TroveManager is
         // We don’t need to increase the shares corresponding to redistribution first, because they would be subtracted immediately after
         // We don’t need to account for interest nor batch fee because it’s proportional to debt shares
         uint256 batchDebtDecrease = _newTroveDebt -
-            _troveChange.upfrontFee -
             _troveChange.appliedRedistUSDXDebtGain;
         uint256 batchCollDecrease = _newTroveColl -
             _troveChange.appliedRedistCollGain;

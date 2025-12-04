@@ -185,8 +185,7 @@ interface ITroveManager is ILiquityBase {
         address _batchAddress,
         uint256 _newColl,
         uint256 _newDebt,
-        uint256 _newAnnualInterestRate,
-        uint256 _upfrontFee // needed by BatchUpdated event
+        uint256 _newAnnualInterestRate
     ) external;
 
     struct OnSetInterestBatchManagerParams {

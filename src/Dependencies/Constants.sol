@@ -75,7 +75,6 @@ uint256 constant URGENT_REDEMPTION_BONUS = 2e16; // 2%
 
 uint256 constant ONE_MINUTE = 1 minutes;
 uint256 constant ONE_YEAR = 365 days;
-uint256 constant UPFRONT_INTEREST_PERIOD = 7 days;
 uint256 constant INTEREST_RATE_ADJ_COOLDOWN = 7 days;
 
 uint256 constant SP_YIELD_SPLIT = 75 * _1pct; // 75%

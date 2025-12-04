@@ -161,11 +161,6 @@ contract ActivePool is
     function getNewApproxAvgInterestRateFromTroveChange(
         TroveChange calldata _troveChange
     ) external view returns (uint256) {
-        // We are ignoring the upfront fee when calculating the approx. avg. interest rate.
-        // This is a simple way to resolve the circularity in:
-        //   fee depends on avg. interest rate -> avg. interest rate is weighted by debt -> debt includes fee -> ...
-        assert(_troveChange.upfrontFee == 0);
-
         if (shutdownTime != 0) return 0;
 
         uint256 newAggRecordedDebt = aggRecordedDebt;
@@ -180,8 +175,8 @@ contract ActivePool is
         newAggWeightedDebtSum -= _troveChange.oldWeightedRecordedDebt;
 
         // Avoid division by 0 if the first ever borrower tries to borrow 0 USDX
-        // Borrowing 0 USDX is not allowed, but our check of debt >= MIN_DEBT happens _after_ calculating the upfront
-        // fee, which involves getting the new approx. avg. interest rate
+        // Borrowing 0 USDX is not allowed, but our check of debt >= MIN_DEBT happens _after_ getting
+        // the new approx. avg. interest rate
         return
             newAggRecordedDebt > 0
                 ? newAggWeightedDebtSum / newAggRecordedDebt
@@ -268,7 +263,7 @@ contract ActivePool is
 
         // Do the arithmetic in 2 steps here to avoid underflow from the decrease
         uint256 newAggRecordedDebt = aggRecordedDebt; // 1 SLOAD
-        newAggRecordedDebt += _mintAggInterest(_troveChange.upfrontFee); // adds minted agg. interest + upfront fee
+        newAggRecordedDebt += _mintAggInterest(); // adds minted agg. interest
         newAggRecordedDebt += _troveChange.appliedRedistUSDXDebtGain;
         newAggRecordedDebt += _troveChange.debtIncrease;
         newAggRecordedDebt -= _troveChange.debtDecrease;
@@ -286,13 +281,11 @@ contract ActivePool is
 
     function mintAggInterest() external override {
         _requireCallerIsBOorSP();
-        aggRecordedDebt += _mintAggInterest(0);
+        aggRecordedDebt += _mintAggInterest();
     }
 
-    function _mintAggInterest(
-        uint256 _upfrontFee
-    ) internal returns (uint256 mintedAmount) {
-        mintedAmount = calcPendingAggInterest() + _upfrontFee;
+    function _mintAggInterest() internal returns (uint256 mintedAmount) {
+        mintedAmount = calcPendingAggInterest();
 
         // Mint part of the USDX interest to the SP and part to the router for LPs.
         if (mintedAmount > 0) {
