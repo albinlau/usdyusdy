@@ -3,6 +3,9 @@
 pragma solidity 0.8.28;
 
 import "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
+import "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
 
 import "./Interfaces/IBorrowerOperations.sol";
 import "./Interfaces/IAddressesRegistry.sol";
@@ -16,6 +19,9 @@ import "./Types/LatestTroveData.sol";
 import "./Types/LatestBatchData.sol";
 
 contract BorrowerOperations is
+    Initializable,
+    OwnableUpgradeable,
+    UUPSUpgradeable,
     LiquityBase,
     AddRemoveManagers,
     IBorrowerOperations
@@ -172,6 +178,8 @@ contract BorrowerOperations is
     constructor(
         IAddressesRegistry _addressesRegistry
     ) AddRemoveManagers(_addressesRegistry) LiquityBase(_addressesRegistry) {
+        _disableInitializers();
+
         // This makes impossible to open a trove with zero withdrawn USDX
         assert(MIN_DEBT > 0);
 
@@ -195,10 +203,18 @@ contract BorrowerOperations is
         emit CollSurplusPoolAddressChanged(address(collSurplusPool));
         emit SortedTrovesAddressChanged(address(sortedTroves));
         emit USDXTokenAddressChanged(address(usdxToken));
+    }
 
+    function initialize(address initialOwner) public initializer {
+        __Ownable_init();
+        transferOwnership(initialOwner);
         // Allow funds movements between Liquity contracts
         collToken.approve(address(activePool), type(uint256).max);
     }
+
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyOwner {}
 
     // --- Borrower Trove Operations ---
 

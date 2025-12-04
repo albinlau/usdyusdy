@@ -16,9 +16,10 @@ contract ERC20Faucet is ERC20, Ownable {
         uint256 _claimAmount,
         uint256 _claimPeriod,
         address _owner
-    ) ERC20(_name, _symbol) Ownable(_owner) {
+    ) ERC20(_name, _symbol) {
         claimAmount = _claimAmount;
         claimPeriod = _claimPeriod;
+        _transferOwnership(_owner);
     }
 
     function mint(address to, uint256 amount) external onlyOwner {

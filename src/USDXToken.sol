@@ -2,8 +2,10 @@
 
 pragma solidity 0.8.28;
 
-import "openzeppelin-contracts/contracts/access/Ownable.sol";
-import "openzeppelin-contracts/contracts/token/ERC20/extensions/ERC20Permit.sol";
+import "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
 
 import "./Interfaces/IUSDXToken.sol";
 
@@ -17,7 +19,13 @@ import "./Interfaces/IUSDXToken.sol";
  * 2) sendToPool() and returnFromPool(): functions callable only Liquity core contracts, which move USDX tokens between Liquity <-> user.
  */
 
-contract USDXToken is Ownable, IUSDXToken, ERC20Permit {
+contract USDXToken is
+    Initializable,
+    OwnableUpgradeable,
+    UUPSUpgradeable,
+    ERC20PermitUpgradeable,
+    IUSDXToken
+{
     string internal constant _NAME = "USDX Stablecoin";
     string internal constant _SYMBOL = "USDX";
 
@@ -38,9 +46,20 @@ contract USDXToken is Ownable, IUSDXToken, ERC20Permit {
     event BorrowerOperationsAddressAdded(address _newBorrowerOperationsAddress);
     event ActivePoolAddressAdded(address _newActivePoolAddress);
 
-    constructor(
-        address _owner
-    ) Ownable(_owner) ERC20(_NAME, _SYMBOL) ERC20Permit(_NAME) {}
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address initialOwner) public initializer {
+        __Ownable_init();
+        transferOwnership(initialOwner);
+        __ERC20_init(_NAME, _SYMBOL);
+        __ERC20Permit_init(_NAME);
+    }
+
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyOwner {}
 
     function setBranchAddresses(
         address _troveManagerAddress,
@@ -103,7 +122,7 @@ contract USDXToken is Ownable, IUSDXToken, ERC20Permit {
     function transfer(
         address recipient,
         uint256 amount
-    ) public override(ERC20, IERC20) returns (bool) {
+    ) public override(ERC20Upgradeable, IERC20Upgradeable) returns (bool) {
         _requireValidRecipient(recipient);
         return super.transfer(recipient, amount);
     }
@@ -112,7 +131,7 @@ contract USDXToken is Ownable, IUSDXToken, ERC20Permit {
         address sender,
         address recipient,
         uint256 amount
-    ) public override(ERC20, IERC20) returns (bool) {
+    ) public override(ERC20Upgradeable, IERC20Upgradeable) returns (bool) {
         _requireValidRecipient(recipient);
         return super.transferFrom(sender, recipient, amount);
     }
@@ -153,7 +172,12 @@ contract USDXToken is Ownable, IUSDXToken, ERC20Permit {
 
     function nonces(
         address owner
-    ) public view override(IERC20Permit, ERC20Permit) returns (uint256) {
+    )
+        public
+        view
+        override(ERC20PermitUpgradeable, IERC20PermitUpgradeable)
+        returns (uint256)
+    {
         return super.nonces(owner);
     }
 }

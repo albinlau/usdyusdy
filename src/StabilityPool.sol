@@ -3,6 +3,9 @@
 pragma solidity 0.8.28;
 
 import "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
+import "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
 
 import "./Interfaces/IStabilityPool.sol";
 import "./Interfaces/IAddressesRegistry.sol";
@@ -115,7 +118,14 @@ import "./Dependencies/LiquityBase.sol";
  *
  *
  */
-contract StabilityPool is LiquityBase, IStabilityPool, IStabilityPoolEvents {
+contract StabilityPool is
+    Initializable,
+    OwnableUpgradeable,
+    UUPSUpgradeable,
+    LiquityBase,
+    IStabilityPool,
+    IStabilityPoolEvents
+{
     using SafeERC20 for IERC20;
 
     string public constant NAME = "StabilityPool";
@@ -192,13 +202,26 @@ contract StabilityPool is LiquityBase, IStabilityPool, IStabilityPoolEvents {
     constructor(
         IAddressesRegistry _addressesRegistry
     ) LiquityBase(_addressesRegistry) {
+        _disableInitializers();
+
         collToken = _addressesRegistry.collToken();
         troveManager = _addressesRegistry.troveManager();
         usdxToken = _addressesRegistry.usdxToken();
+    }
+
+    function initialize(address initialOwner) public initializer {
+        __Ownable_init();
+        transferOwnership(initialOwner);
+
+        P = P_PRECISION;
 
         emit TroveManagerAddressChanged(address(troveManager));
         emit USDXTokenAddressChanged(address(usdxToken));
     }
+
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyOwner {}
 
     // --- Getters for public variables. Required by IPool interface ---
 

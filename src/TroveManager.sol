@@ -2,6 +2,10 @@
 
 pragma solidity 0.8.28;
 
+import "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
+
 import "./Interfaces/ITroveManager.sol";
 import "./Interfaces/IAddressesRegistry.sol";
 import "./Interfaces/IStabilityPool.sol";
@@ -14,7 +18,14 @@ import "./Interfaces/ICollateralRegistry.sol";
 import "./Interfaces/IWETH.sol";
 import "./Dependencies/LiquityBase.sol";
 
-contract TroveManager is LiquityBase, ITroveManager, ITroveEvents {
+contract TroveManager is
+    Initializable,
+    OwnableUpgradeable,
+    UUPSUpgradeable,
+    LiquityBase,
+    ITroveManager,
+    ITroveEvents
+{
     // --- Connected contract declarations ---
 
     ITroveNFT public troveNFT;
@@ -191,12 +202,24 @@ contract TroveManager is LiquityBase, ITroveManager, ITroveEvents {
     constructor(
         IAddressesRegistry _addressesRegistry
     ) LiquityBase(_addressesRegistry) {
+        _disableInitializers();
+
         CCR = _addressesRegistry.CCR();
         MCR = _addressesRegistry.MCR();
         SCR = _addressesRegistry.SCR();
         LIQUIDATION_PENALTY_SP = _addressesRegistry.LIQUIDATION_PENALTY_SP();
         LIQUIDATION_PENALTY_REDISTRIBUTION = _addressesRegistry
             .LIQUIDATION_PENALTY_REDISTRIBUTION();
+
+        WETH = _addressesRegistry.WETH();
+    }
+
+    function initialize(
+        address initialOwner,
+        IAddressesRegistry _addressesRegistry
+    ) public initializer {
+        __Ownable_init();
+        transferOwnership(initialOwner);
 
         troveNFT = _addressesRegistry.troveNFT();
         borrowerOperations = _addressesRegistry.borrowerOperations();
@@ -205,7 +228,6 @@ contract TroveManager is LiquityBase, ITroveManager, ITroveEvents {
         collSurplusPool = _addressesRegistry.collSurplusPool();
         usdxToken = _addressesRegistry.usdxToken();
         sortedTroves = _addressesRegistry.sortedTroves();
-        WETH = _addressesRegistry.WETH();
         collateralRegistry = _addressesRegistry.collateralRegistry();
 
         emit TroveNFTAddressChanged(address(troveNFT));
@@ -217,6 +239,10 @@ contract TroveManager is LiquityBase, ITroveManager, ITroveEvents {
         emit SortedTrovesAddressChanged(address(sortedTroves));
         emit CollateralRegistryAddressChanged(address(collateralRegistry));
     }
+
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyOwner {}
 
     // --- Getters ---
 

@@ -2,11 +2,15 @@
 
 pragma solidity ^0.8.0;
 
-import "openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import "openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Permit.sol";
-import "openzeppelin-contracts/contracts/interfaces/IERC5267.sol";
+import "openzeppelin-contracts-upgradeable/contracts/token/ERC20/extensions/IERC20MetadataUpgradeable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/token/ERC20/extensions/IERC20PermitUpgradeable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/interfaces/IERC5267Upgradeable.sol";
 
-interface IUSDXToken is IERC20Metadata, IERC20Permit, IERC5267 {
+interface IUSDXToken is
+    IERC20MetadataUpgradeable,
+    IERC20PermitUpgradeable,
+    IERC5267Upgradeable
+{
     function setBranchAddresses(
         address _troveManagerAddress,
         address _stabilityPoolAddress,

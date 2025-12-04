@@ -2,12 +2,19 @@
 
 pragma solidity 0.8.28;
 
-import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
+import {OwnableUpgradeable} from "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
+import {Initializable} from "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
+import {UUPSUpgradeable} from "openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
 
 import {MIN_LIQUIDATION_PENALTY_SP, MAX_LIQUIDATION_PENALTY_REDISTRIBUTION} from "./Dependencies/Constants.sol";
 import "./Interfaces/IAddressesRegistry.sol";
 
-contract AddressesRegistry is Ownable, IAddressesRegistry {
+contract AddressesRegistry is
+    Initializable,
+    OwnableUpgradeable,
+    UUPSUpgradeable,
+    IAddressesRegistry
+{
     IERC20Metadata public collToken;
     IBorrowerOperations public borrowerOperations;
     ITroveManager public troveManager;
@@ -70,14 +77,14 @@ contract AddressesRegistry is Ownable, IAddressesRegistry {
     event WETHAddressChanged(address _wethAddress);
 
     constructor(
-        address _owner,
         uint256 _ccr,
         uint256 _mcr,
         uint256 _bcr,
         uint256 _scr,
         uint256 _liquidationPenaltySP,
         uint256 _liquidationPenaltyRedistribution
-    ) Ownable(_owner) {
+    ) {
+        _disableInitializers();
         if (_ccr <= 1e18 || _ccr >= 2e18) revert InvalidCCR();
         if (_mcr <= 1e18 || _mcr >= 2e18) revert InvalidMCR();
         if (_bcr < 5e16 || _bcr >= 50e16) revert InvalidBCR();
@@ -98,6 +105,15 @@ contract AddressesRegistry is Ownable, IAddressesRegistry {
         LIQUIDATION_PENALTY_SP = _liquidationPenaltySP;
         LIQUIDATION_PENALTY_REDISTRIBUTION = _liquidationPenaltyRedistribution;
     }
+
+    function initialize(address initialOwner) public initializer {
+        __Ownable_init();
+        transferOwnership(initialOwner);
+    }
+
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyOwner {}
 
     function setAddresses(AddressVars memory _vars) external onlyOwner {
         collToken = _vars.collToken;

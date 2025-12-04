@@ -3,11 +3,19 @@
 pragma solidity 0.8.28;
 
 import "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
+import "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
 
 import "./Interfaces/ICollSurplusPool.sol";
 import "./Interfaces/IAddressesRegistry.sol";
 
-contract CollSurplusPool is ICollSurplusPool {
+contract CollSurplusPool is
+    Initializable,
+    OwnableUpgradeable,
+    UUPSUpgradeable,
+    ICollSurplusPool
+{
     using SafeERC20 for IERC20;
 
     string public constant NAME = "CollSurplusPool";
@@ -32,6 +40,8 @@ contract CollSurplusPool is ICollSurplusPool {
     event CollSent(address indexed _to, uint256 _amount);
 
     constructor(IAddressesRegistry _addressesRegistry) {
+        _disableInitializers();
+
         collToken = _addressesRegistry.collToken();
         borrowerOperationsAddress = address(
             _addressesRegistry.borrowerOperations()
@@ -41,6 +51,15 @@ contract CollSurplusPool is ICollSurplusPool {
         emit BorrowerOperationsAddressChanged(borrowerOperationsAddress);
         emit TroveManagerAddressChanged(troveManagerAddress);
     }
+
+    function initialize(address initialOwner) public initializer {
+        __Ownable_init();
+        transferOwnership(initialOwner);
+    }
+
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyOwner {}
 
     /* Returns the collBalance state variable
        Not necessarily equal to the raw coll balance - coll can be forcibly sent to contracts. */

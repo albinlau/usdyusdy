@@ -2,6 +2,10 @@
 
 pragma solidity 0.8.28;
 
+import "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
+
 import "./Interfaces/ISortedTroves.sol";
 import "./Interfaces/IAddressesRegistry.sol";
 import "./Interfaces/ITroveManager.sol";
@@ -35,7 +39,12 @@ uint256 constant ROOT_NODE_ID = 0;
  *
  * - Public functions with parameters have been made internal to save gas, and given an external wrapper function for external access
  */
-contract SortedTroves is ISortedTroves {
+contract SortedTroves is
+    Initializable,
+    OwnableUpgradeable,
+    UUPSUpgradeable,
+    ISortedTroves
+{
     string public constant NAME = "SortedTroves";
 
     // Constants used for documentation purposes
@@ -79,18 +88,29 @@ contract SortedTroves is ISortedTroves {
     mapping(BatchId => Batch) public batches;
 
     constructor(IAddressesRegistry _addressesRegistry) {
-        // Technically, this is not needed as long as ROOT_NODE_ID is 0, but it doesn't hurt
-        nodes[ROOT_NODE_ID].nextId = ROOT_NODE_ID;
-        nodes[ROOT_NODE_ID].prevId = ROOT_NODE_ID;
+        _disableInitializers();
 
         troveManager = ITroveManager(_addressesRegistry.troveManager());
         borrowerOperationsAddress = address(
             _addressesRegistry.borrowerOperations()
         );
+    }
+
+    function initialize(address initialOwner) public initializer {
+        __Ownable_init();
+        transferOwnership(initialOwner);
+
+        // Technically, this is not needed as long as ROOT_NODE_ID is 0, but it doesn't hurt
+        nodes[ROOT_NODE_ID].nextId = ROOT_NODE_ID;
+        nodes[ROOT_NODE_ID].prevId = ROOT_NODE_ID;
 
         emit TroveManagerAddressChanged(address(troveManager));
         emit BorrowerOperationsAddressChanged(borrowerOperationsAddress);
     }
+
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyOwner {}
 
     // Insert an entire list slice (such as a batch of Troves sharing the same interest rate)
     // between adjacent nodes `_prevId` and `_nextId`.

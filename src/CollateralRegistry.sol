@@ -3,6 +3,9 @@
 pragma solidity 0.8.28;
 
 import "openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
 
 import "./Interfaces/ITroveManager.sol";
 import "./Interfaces/IUSDXToken.sol";
@@ -11,7 +14,12 @@ import "./Dependencies/LiquityMath.sol";
 
 import "./Interfaces/ICollateralRegistry.sol";
 
-contract CollateralRegistry is ICollateralRegistry {
+contract CollateralRegistry is
+    Initializable,
+    OwnableUpgradeable,
+    UUPSUpgradeable,
+    ICollateralRegistry
+{
     uint256 public immutable totalCollaterals;
 
     IERC20Metadata internal immutable token0;
@@ -51,6 +59,8 @@ contract CollateralRegistry is ICollateralRegistry {
         IERC20Metadata[] memory _tokens,
         ITroveManager[] memory _troveManagers
     ) {
+        _disableInitializers();
+
         uint256 numTokens = _tokens.length;
         require(numTokens > 0, "Collateral list cannot be empty");
         require(numTokens <= 10, "Collateral list too long");
@@ -102,6 +112,15 @@ contract CollateralRegistry is ICollateralRegistry {
         baseRate = INITIAL_BASE_RATE;
         emit BaseRateUpdated(INITIAL_BASE_RATE);
     }
+
+    function initialize(address initialOwner) public initializer {
+        __Ownable_init();
+        transferOwnership(initialOwner);
+    }
+
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyOwner {}
 
     struct RedemptionTotals {
         uint256 numCollaterals;

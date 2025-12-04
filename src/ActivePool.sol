@@ -4,6 +4,9 @@ pragma solidity 0.8.28;
 
 import "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import "openzeppelin-contracts/contracts/utils/math/Math.sol";
+import "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
 
 import "./Dependencies/Constants.sol";
 import "./Interfaces/IActivePool.sol";
@@ -19,7 +22,12 @@ import "./Interfaces/IDefaultPool.sol";
  * Stability Pool, the Default Pool, or both, depending on the liquidation conditions.
  *
  */
-contract ActivePool is IActivePool {
+contract ActivePool is
+    Initializable,
+    OwnableUpgradeable,
+    UUPSUpgradeable,
+    IActivePool
+{
     using SafeERC20 for IERC20;
 
     string public constant NAME = "ActivePool";
@@ -74,6 +82,7 @@ contract ActivePool is IActivePool {
     event ActivePoolCollBalanceUpdated(uint256 _collBalance);
 
     constructor(IAddressesRegistry _addressesRegistry) {
+        _disableInitializers();
         collToken = _addressesRegistry.collToken();
         borrowerOperationsAddress = address(
             _addressesRegistry.borrowerOperations()
@@ -91,10 +100,19 @@ contract ActivePool is IActivePool {
         emit TroveManagerAddressChanged(troveManagerAddress);
         emit StabilityPoolAddressChanged(address(stabilityPool));
         emit DefaultPoolAddressChanged(defaultPoolAddress);
+    }
+
+    function initialize(address initialOwner) public initializer {
+        __Ownable_init();
+        transferOwnership(initialOwner);
 
         // Allow funds movements between Liquity contracts
         collToken.approve(defaultPoolAddress, type(uint256).max);
     }
+
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyOwner {}
 
     // --- Getters for public variables. Required by IPool interface ---
 
