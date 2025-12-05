@@ -26,17 +26,9 @@ interface IActivePool {
 
     function aggRecordedDebt() external view returns (uint256);
 
-    function aggWeightedDebtSum() external view returns (uint256);
-
-    function aggBatchManagementFees() external view returns (uint256);
-
-    function aggWeightedBatchManagementFeeSum() external view returns (uint256);
-
     function calcPendingAggInterest() external view returns (uint256);
 
     function calcPendingSPYield() external view returns (uint256);
-
-    function calcPendingAggBatchManagementFee() external view returns (uint256);
 
     function getNewApproxAvgInterestRateFromTroveChange(
         TroveChange calldata _troveChange
@@ -45,13 +37,7 @@ interface IActivePool {
     function mintAggInterest() external;
 
     function mintAggInterestAndAccountForTroveChange(
-        TroveChange calldata _troveChange,
-        address _batchManager
-    ) external;
-
-    function mintBatchManagementFeeAndAccountForChange(
-        TroveChange calldata _troveChange,
-        address _batchAddress
+        TroveChange calldata _troveChange
     ) external;
 
     function setShutdownFlag() external;

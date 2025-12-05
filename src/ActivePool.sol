@@ -14,6 +14,7 @@ import "./Interfaces/IAddressesRegistry.sol";
 import "./Interfaces/IUSDXToken.sol";
 import "./Interfaces/IInterestRouter.sol";
 import "./Interfaces/IDefaultPool.sol";
+import "./Interfaces/ICollateralConfig.sol";
 
 /*
  * The Active Pool holds the collateral and USDX debt (but not USDX tokens) for all active troves.
@@ -41,6 +42,7 @@ contract ActivePool is
 
     IInterestRouter public immutable interestRouter;
     IUSDXRewardsReceiver public immutable stabilityPool;
+    ICollateralConfig public immutable collateralConfig;
 
     uint256 internal collBalance; // deposited coll tracker
 
@@ -48,26 +50,11 @@ contract ActivePool is
     // "D" in the spec.
     uint256 public aggRecordedDebt;
 
-    /* Sum of individual recorded Trove debts weighted by their respective chosen interest rates.
-     * Updated at individual Trove operations.
-     * "S" in the spec.
-     */
-    uint256 public aggWeightedDebtSum;
-
-    // Last time at which the aggregate recorded debt and weighted sum were updated
+    // Last time at which the aggregate recorded debt was updated
     uint256 public lastAggUpdateTime;
 
     // Timestamp at which branch was shut down. 0 if not shut down.
     uint256 public shutdownTime;
-
-    // Aggregate batch fees tracker
-    uint256 public aggBatchManagementFees;
-    /* Sum of individual recorded Trove debts weighted by their respective batch management fees
-     * Updated at individual batched Trove operations.
-     */
-    uint256 public aggWeightedBatchManagementFeeSum;
-    // Last time at which the aggregate batch fees and weighted sum were updated
-    uint256 public lastAggBatchManagementFeesUpdateTime;
 
     // --- Events ---
 
@@ -91,6 +78,7 @@ contract ActivePool is
         stabilityPool = IUSDXRewardsReceiver(
             _addressesRegistry.stabilityPool()
         );
+        collateralConfig = _addressesRegistry.collateralConfig();
         defaultPoolAddress = address(_addressesRegistry.defaultPool());
         interestRouter = _addressesRegistry.interestRouter();
         usdxToken = _addressesRegistry.usdxToken();
@@ -125,17 +113,22 @@ contract ActivePool is
         return collBalance;
     }
 
+    /**
+     * @notice Calculate pending aggregate interest
+     * @dev Uses unified interest rate from CollateralConfig
+     */
     function calcPendingAggInterest() public view returns (uint256) {
         if (shutdownTime != 0) return 0;
 
-        // We use the ceiling of the division here to ensure positive error, while we use regular floor division
-        // when calculating the interest accrued by individual Troves.
-        // This ensures that `system debt >= sum(trove debt)` always holds, and thus system debt won't turn negative
-        // even if all Trove debt is repaid. The difference should be small and it should scale with the number of
-        // interest minting events.
+        // Retrieve unified interest rate
+        uint256 annualInterestRate = collateralConfig.getAnnualInterestRate();
+        uint256 timePeriod = block.timestamp - lastAggUpdateTime;
+
+        // We use the ceiling of the division here to ensure positive error
+        // This ensures that `system debt >= sum(trove debt)` always holds
         return
             Math.ceilDiv(
-                aggWeightedDebtSum * (block.timestamp - lastAggUpdateTime),
+                aggRecordedDebt * annualInterestRate * timePeriod,
                 ONE_YEAR * DECIMAL_PRECISION
             );
     }
@@ -144,52 +137,22 @@ contract ActivePool is
         return (calcPendingAggInterest() * SP_YIELD_SPLIT) / DECIMAL_PRECISION;
     }
 
-    function calcPendingAggBatchManagementFee() public view returns (uint256) {
-        uint256 periodEnd = shutdownTime != 0 ? shutdownTime : block.timestamp;
-        uint256 periodStart = Math.min(
-            lastAggBatchManagementFeesUpdateTime,
-            periodEnd
-        );
-
-        return
-            Math.ceilDiv(
-                aggWeightedBatchManagementFeeSum * (periodEnd - periodStart),
-                ONE_YEAR * DECIMAL_PRECISION
-            );
-    }
-
+    /**
+     * @notice Get new approximate average interest rate
+     * @dev Now simply returns the unified rate from Config
+     */
     function getNewApproxAvgInterestRateFromTroveChange(
         TroveChange calldata _troveChange
     ) external view returns (uint256) {
         if (shutdownTime != 0) return 0;
 
-        uint256 newAggRecordedDebt = aggRecordedDebt;
-        newAggRecordedDebt += calcPendingAggInterest();
-        newAggRecordedDebt += _troveChange.appliedRedistUSDXDebtGain;
-        newAggRecordedDebt += _troveChange.debtIncrease;
-        newAggRecordedDebt += _troveChange.batchAccruedManagementFee;
-        newAggRecordedDebt -= _troveChange.debtDecrease;
-
-        uint256 newAggWeightedDebtSum = aggWeightedDebtSum;
-        newAggWeightedDebtSum += _troveChange.newWeightedRecordedDebt;
-        newAggWeightedDebtSum -= _troveChange.oldWeightedRecordedDebt;
-
-        // Avoid division by 0 if the first ever borrower tries to borrow 0 USDX
-        // Borrowing 0 USDX is not allowed, but our check of debt >= MIN_DEBT happens _after_ getting
-        // the new approx. avg. interest rate
-        return
-            newAggRecordedDebt > 0
-                ? newAggWeightedDebtSum / newAggRecordedDebt
-                : 0;
+        // Return unified interest rate
+        return collateralConfig.getAnnualInterestRate();
     }
 
-    // Returns sum of agg.recorded debt plus agg. pending interest. Excludes pending redist. gains.
+    // Returns sum of agg.recorded debt plus agg. pending interest
     function getUSDXDebt() external view returns (uint256) {
-        return
-            aggRecordedDebt +
-            calcPendingAggInterest() +
-            aggBatchManagementFees +
-            calcPendingAggBatchManagementFee();
+        return aggRecordedDebt + calcPendingAggInterest();
     }
 
     // --- Pool functionality ---
@@ -248,18 +211,9 @@ contract ActivePool is
     // The net Trove debt change could be positive or negative in a repayment (depending on whether its redistribution gain or repayment amount is larger),
     // so this function accepts both the increase and the decrease to avoid using (and converting to/from) signed ints.
     function mintAggInterestAndAccountForTroveChange(
-        TroveChange calldata _troveChange,
-        address _batchAddress
+        TroveChange calldata _troveChange
     ) external {
         _requireCallerIsBOorTroveM();
-
-        // Batch management fees
-        if (_batchAddress != address(0)) {
-            _mintBatchManagementFeeAndAccountForChange(
-                _troveChange,
-                _batchAddress
-            );
-        }
 
         // Do the arithmetic in 2 steps here to avoid underflow from the decrease
         uint256 newAggRecordedDebt = aggRecordedDebt; // 1 SLOAD
@@ -268,15 +222,6 @@ contract ActivePool is
         newAggRecordedDebt += _troveChange.debtIncrease;
         newAggRecordedDebt -= _troveChange.debtDecrease;
         aggRecordedDebt = newAggRecordedDebt; // 1 SSTORE
-
-        // assert(aggRecordedDebt >= 0) // This should never be negative. If all redistribution gians and all aggregate interest was applied
-        // and all Trove debts were repaid, it should become 0.
-
-        // Do the arithmetic in 2 steps here to avoid underflow from the decrease
-        uint256 newAggWeightedDebtSum = aggWeightedDebtSum; // 1 SLOAD
-        newAggWeightedDebtSum += _troveChange.newWeightedRecordedDebt;
-        newAggWeightedDebtSum -= _troveChange.oldWeightedRecordedDebt;
-        aggWeightedDebtSum = newAggWeightedDebtSum; // 1 SSTORE
     }
 
     function mintAggInterest() external override {
@@ -302,45 +247,6 @@ contract ActivePool is
         }
 
         lastAggUpdateTime = block.timestamp;
-    }
-
-    function mintBatchManagementFeeAndAccountForChange(
-        TroveChange calldata _troveChange,
-        address _batchAddress
-    ) external override {
-        _requireCallerIsTroveManager();
-        _mintBatchManagementFeeAndAccountForChange(_troveChange, _batchAddress);
-    }
-
-    function _mintBatchManagementFeeAndAccountForChange(
-        TroveChange memory _troveChange,
-        address _batchAddress
-    ) internal {
-        aggRecordedDebt += _troveChange.batchAccruedManagementFee;
-
-        // Do the arithmetic in 2 steps here to avoid underflow from the decrease
-        uint256 newAggBatchManagementFees = aggBatchManagementFees; // 1 SLOAD
-        newAggBatchManagementFees += calcPendingAggBatchManagementFee();
-        newAggBatchManagementFees -= _troveChange.batchAccruedManagementFee;
-        aggBatchManagementFees = newAggBatchManagementFees; // 1 SSTORE
-
-        // Do the arithmetic in 2 steps here to avoid underflow from the decrease
-        uint256 newAggWeightedBatchManagementFeeSum = aggWeightedBatchManagementFeeSum; // 1 SLOAD
-        newAggWeightedBatchManagementFeeSum += _troveChange
-            .newWeightedRecordedBatchManagementFee;
-        newAggWeightedBatchManagementFeeSum -= _troveChange
-            .oldWeightedRecordedBatchManagementFee;
-        aggWeightedBatchManagementFeeSum = newAggWeightedBatchManagementFeeSum; // 1 SSTORE
-
-        // mint fee to batch address
-        if (_troveChange.batchAccruedManagementFee > 0) {
-            usdxToken.mint(
-                _batchAddress,
-                _troveChange.batchAccruedManagementFee
-            );
-        }
-
-        lastAggBatchManagementFeesUpdateTime = block.timestamp;
     }
 
     // --- Shutdown ---

@@ -25,6 +25,7 @@ interface ICollateralConfig {
     event Paused(bool paused);
     event AnnualInterestRateUpdated(uint256 newRate);
     event TreasuryUpdated(address newTreasury);
+    event MintInterestFailed(uint256 oldRate, uint256 newRate);
 
     // --- Errors ---
 
@@ -41,7 +42,7 @@ interface ICollateralConfig {
     function setConfig(
         bool _isFrozen,
         bool _isPaused,
-        uint256 _collAnnualInterestRate,
+        uint256 _annualInterestRate,
         address _treasury
     ) external;
 
@@ -59,7 +60,7 @@ interface ICollateralConfig {
      * @notice Update collateral annual interest rate
      * @param _rate Annual interest rate in 18 decimals (e.g., 5e16 = 5%)
      */
-    function setCollAnnualInterestRate(uint256 _rate) external;
+    function setAnnualInterestRate(uint256 _rate) external;
 
     /**
      * @notice Update treasury address
@@ -74,7 +75,7 @@ interface ICollateralConfig {
 
     function isPaused() external view returns (bool);
 
-    function getCollAnnualInterestRate() external view returns (uint256);
+    function getAnnualInterestRate() external view returns (uint256);
 
     function getTreasury() external view returns (address);
 

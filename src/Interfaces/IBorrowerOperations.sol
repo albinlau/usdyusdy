@@ -25,27 +25,9 @@ interface IBorrowerOperations is ILiquityBase, IAddRemoveManagers {
         uint256 _usdxAmount,
         uint256 _upperHint,
         uint256 _lowerHint,
-        uint256 _annualInterestRate,
         address _addManager,
         address _removeManager,
         address _receiver
-    ) external returns (uint256);
-
-    struct OpenTroveAndJoinInterestBatchManagerParams {
-        address owner;
-        uint256 ownerIndex;
-        uint256 collAmount;
-        uint256 usdxAmount;
-        uint256 upperHint;
-        uint256 lowerHint;
-        address interestBatchManager;
-        address addManager;
-        address removeManager;
-        address receiver;
-    }
-
-    function openTroveAndJoinInterestBatchManager(
-        OpenTroveAndJoinInterestBatchManagerParams calldata _params
     ) external returns (uint256);
 
     function addColl(uint256 _troveId, uint256 _ETHAmount) external;
@@ -76,13 +58,6 @@ interface IBorrowerOperations is ILiquityBase, IAddRemoveManagers {
         uint256 _lowerHint
     ) external;
 
-    function adjustTroveInterestRate(
-        uint256 _troveId,
-        uint256 _newAnnualInterestRate,
-        uint256 _upperHint,
-        uint256 _lowerHint
-    ) external;
-
     function applyPendingDebt(
         uint256 _troveId,
         uint256 _lowerHint,
@@ -98,94 +73,4 @@ interface IBorrowerOperations is ILiquityBase, IAddRemoveManagers {
     function shutdown() external;
 
     function shutdownFromOracleFailure() external;
-
-    function checkBatchManagerExists(
-        address _batchMananger
-    ) external view returns (bool);
-
-    // -- individual delegation --
-    struct InterestIndividualDelegate {
-        address account;
-        uint128 minInterestRate;
-        uint128 maxInterestRate;
-        uint256 minInterestRateChangePeriod;
-    }
-
-    function getInterestIndividualDelegateOf(
-        uint256 _troveId
-    ) external view returns (InterestIndividualDelegate memory);
-
-    function setInterestIndividualDelegate(
-        uint256 _troveId,
-        address _delegate,
-        uint128 _minInterestRate,
-        uint128 _maxInterestRate,
-        // only needed if trove was previously in a batch:
-        uint256 _newAnnualInterestRate,
-        uint256 _upperHint,
-        uint256 _lowerHint,
-        uint256 _minInterestRateChangePeriod
-    ) external;
-
-    function removeInterestIndividualDelegate(uint256 _troveId) external;
-
-    // -- batches --
-    struct InterestBatchManager {
-        uint128 minInterestRate;
-        uint128 maxInterestRate;
-        uint256 minInterestRateChangePeriod;
-    }
-
-    function registerBatchManager(
-        uint128 minInterestRate,
-        uint128 maxInterestRate,
-        uint128 currentInterestRate,
-        uint128 fee,
-        uint128 minInterestRateChangePeriod
-    ) external;
-
-    function lowerBatchManagementFee(uint256 _newAnnualFee) external;
-
-    function setBatchManagerAnnualInterestRate(
-        uint128 _newAnnualInterestRate,
-        uint256 _upperHint,
-        uint256 _lowerHint
-    ) external;
-
-    function interestBatchManagerOf(
-        uint256 _troveId
-    ) external view returns (address);
-
-    function getInterestBatchManager(
-        address _account
-    ) external view returns (InterestBatchManager memory);
-
-    function setInterestBatchManager(
-        uint256 _troveId,
-        address _newBatchManager,
-        uint256 _upperHint,
-        uint256 _lowerHint
-    ) external;
-
-    function kickFromBatch(
-        uint256 _troveId,
-        uint256 _upperHint,
-        uint256 _lowerHint
-    ) external;
-
-    function removeFromBatch(
-        uint256 _troveId,
-        uint256 _newAnnualInterestRate,
-        uint256 _upperHint,
-        uint256 _lowerHint
-    ) external;
-
-    function switchBatchManager(
-        uint256 _troveId,
-        uint256 _removeUpperHint,
-        uint256 _removeLowerHint,
-        address _newBatchManager,
-        uint256 _addUpperHint,
-        uint256 _addLowerHint
-    ) external;
 }

@@ -7,14 +7,9 @@ interface ITroveEvents {
         openTrove,
         closeTrove,
         adjustTrove,
-        adjustTroveInterestRate,
         applyPendingDebt,
         liquidate,
-        redeemCollateral,
-        // batch management
-        openTroveAndJoinBatch,
-        setInterestBatchManager,
-        removeFromBatch
+        redeemCollateral
     }
 
     event Liquidation(
@@ -62,37 +57,4 @@ interface ITroveEvents {
     );
 
     event RedemptionFeePaidToTrove(uint256 indexed _troveId, uint256 _ETHFee);
-
-    // Batch management
-
-    enum BatchOperation {
-        registerBatchManager,
-        lowerBatchManagerAnnualFee,
-        setBatchManagerAnnualInterestRate,
-        applyBatchInterestAndFee,
-        joinBatch,
-        exitBatch,
-        // used when the batch is updated as a result of a Trove change inside the batch
-        troveChange
-    }
-
-    event BatchUpdated(
-        address indexed _interestBatchManager,
-        BatchOperation _operation,
-        uint256 _debt,
-        uint256 _coll,
-        uint256 _annualInterestRate,
-        uint256 _annualManagementFee,
-        uint256 _totalDebtShares
-    );
-
-    event BatchedTroveUpdated(
-        uint256 indexed _troveId,
-        address _interestBatchManager,
-        uint256 _batchDebtShares,
-        uint256 _coll,
-        uint256 _stake,
-        uint256 _snapshotOfTotalCollRedist,
-        uint256 _snapshotOfTotalDebtRedist
-    );
 }

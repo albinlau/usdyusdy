@@ -103,4 +103,19 @@ library LiquityMath {
             return 2 ** 256 - 1;
         }
     }
+
+    // Compute Nominal Collateral Ratio (NCR) = coll / debt (without price)
+    // Used for SortedTroves ordering
+    function _computeNominalCR(
+        uint256 _coll,
+        uint256 _debt
+    ) internal pure returns (uint256) {
+        if (_debt > 0) {
+            return (_coll * DECIMAL_PRECISION) / _debt;
+        }
+        // Return the maximal value for uint256 if the debt is 0. Represents "infinite" NCR.
+        else {
+            return 2 ** 256 - 1;
+        }
+    }
 }

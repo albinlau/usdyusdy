@@ -9,19 +9,19 @@ interface IDebtInFrontHelper {
 
     function hintHelpers() external view returns (IHintHelpers);
 
-    function getDebtBetweenInterestRates(
+    function getDebtBetweenNCRs(
         uint256 _collIndex,
-        uint256 _interestRateLo, // inclusive
-        uint256 _interestRateHi, // exclusive
+        uint256 _ncrLo, // inclusive (lower NCR, further down the list)
+        uint256 _ncrHi, // exclusive (higher NCR, closer to head)
         uint256 _excludedTroveId,
         uint256 _hintId,
         uint256 _numTrials
     ) external view returns (uint256 debt, uint256 blockTimestamp);
 
-    function getDebtBetweenInterestRateAndTrove(
+    function getDebtBetweenNCRAndTrove(
         uint256 _collIndex,
-        uint256 _interestRateLo, // inclusive
-        uint256 _interestRateHi, // exclusive
+        uint256 _ncrLo, // inclusive (lower NCR, further down the list)
+        uint256 _ncrHi, // exclusive (higher NCR, closer to head)
         uint256 _troveIdToStopAt, // excluded
         uint256 _hintId,
         uint256 _numTrials

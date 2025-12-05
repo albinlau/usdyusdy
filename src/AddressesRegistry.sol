@@ -43,8 +43,6 @@ contract AddressesRegistry is
 
     // Minimum collateral ratio for individual troves
     uint256 public immutable MCR;
-    // Extra buffer of collateral ratio to join a batch or adjust a trove inside a batch (on top of MCR)
-    uint256 public immutable BCR;
     // Liquidation penalty for troves offset to the SP
     uint256 public immutable LIQUIDATION_PENALTY_SP;
     // Liquidation penalty for troves redistributed
@@ -103,7 +101,6 @@ contract AddressesRegistry is
         CCR = _ccr;
         SCR = _scr;
         MCR = _mcr;
-        BCR = _bcr;
         LIQUIDATION_PENALTY_SP = _liquidationPenaltySP;
         LIQUIDATION_PENALTY_REDISTRIBUTION = _liquidationPenaltyRedistribution;
     }

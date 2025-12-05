@@ -11,6 +11,7 @@ import {LatestTroveData} from "./Types/LatestTroveData.sol";
 
 /*
  * Helper contract used by the frontend to calculate debt-in-front precisely.
+ * Now based on NCR (Nominal Collateral Ratio) ranges since SortedTroves sorts by NCR.
  * Not part of the core Liquity system.
  */
 contract DebtInFrontHelper is IDebtInFrontHelper {
@@ -28,21 +29,21 @@ contract DebtInFrontHelper is IDebtInFrontHelper {
     function _findHint(
         ITroveManager _troveManager,
         uint256 _collIndex,
-        uint256 _interestRateLo,
+        uint256 _ncrLo,
         uint256 _hintId,
         uint256 _numTrials,
         uint256 _randomSeed
     ) internal view returns (uint256 hintId) {
         uint256 diff = _hintId != 0
             ? SignedMath.abs(
-                int256(_troveManager.getTroveAnnualInterestRate(_hintId)) -
-                    int256(_interestRateLo)
+                int256(_troveManager.getTroveNominalCR(_hintId)) -
+                    int256(_ncrLo)
             )
             : type(uint256).max;
 
         (uint256 newHintId, uint256 newDiff, ) = hintHelpers.getApproxHint(
             _collIndex,
-            _interestRateLo,
+            _ncrLo,
             _numTrials,
             _randomSeed
         );
@@ -52,8 +53,8 @@ contract DebtInFrontHelper is IDebtInFrontHelper {
 
     function _getDebtBetween(
         uint256 _collIndex,
-        uint256 _interestRateLo, // inclusive
-        uint256 _interestRateHi, // exclusive
+        uint256 _ncrLo, // inclusive (lower NCR, further down the list)
+        uint256 _ncrHi, // exclusive (higher NCR, closer to head)
         uint256 _excludedTroveId,
         bool _stopAfterExludedTrove,
         uint256 _hintId,
@@ -76,8 +77,8 @@ contract DebtInFrontHelper is IDebtInFrontHelper {
                     abi.encode(
                         block.timestamp,
                         _collIndex,
-                        _interestRateLo,
-                        _interestRateHi,
+                        _ncrLo,
+                        _ncrHi,
                         _excludedTroveId,
                         _hintId,
                         _numTrials
@@ -88,7 +89,7 @@ contract DebtInFrontHelper is IDebtInFrontHelper {
             _hintId = _findHint(
                 troveManager,
                 _collIndex,
-                _interestRateLo,
+                _ncrLo,
                 _hintId,
                 _numTrials,
                 randomSeed
@@ -96,33 +97,36 @@ contract DebtInFrontHelper is IDebtInFrontHelper {
         }
 
         (uint256 currId, ) = sortedTroves.findInsertPosition(
-            _interestRateLo,
+            _ncrLo,
             _hintId,
             _hintId
         );
 
         while (currId != 0) {
-            LatestTroveData memory trove = troveManager.getLatestTroveData(
-                currId
-            );
-            if (trove.annualInterestRate >= _interestRateHi) break;
+            uint256 troveNCR = troveManager.getTroveNominalCR(currId);
+            // List is sorted descending by NCR, so we iterate from higher NCR to lower NCR
+            // Stop when we reach troves with NCR >= _ncrHi (outside our range)
+            if (troveNCR >= _ncrHi) break;
 
             if (currId == _excludedTroveId) {
                 if (_stopAfterExludedTrove) break;
             } else {
+                LatestTroveData memory trove = troveManager.getLatestTroveData(
+                    currId
+                );
                 debt += trove.entireDebt;
             }
 
-            currId = sortedTroves.getPrev(currId);
+            currId = sortedTroves.getNext(currId);
         }
 
         blockTimestamp = block.timestamp;
     }
 
-    function getDebtBetweenInterestRates(
+    function getDebtBetweenNCRs(
         uint256 _collIndex,
-        uint256 _interestRateLo, // inclusive
-        uint256 _interestRateHi, // exclusive
+        uint256 _ncrLo, // inclusive (lower NCR, further down the list)
+        uint256 _ncrHi, // exclusive (higher NCR, closer to head)
         uint256 _excludedTroveId,
         uint256 _hintId,
         uint256 _numTrials
@@ -130,8 +134,8 @@ contract DebtInFrontHelper is IDebtInFrontHelper {
         return
             _getDebtBetween(
                 _collIndex,
-                _interestRateLo,
-                _interestRateHi,
+                _ncrLo,
+                _ncrHi,
                 _excludedTroveId,
                 false,
                 _hintId,
@@ -139,10 +143,10 @@ contract DebtInFrontHelper is IDebtInFrontHelper {
             );
     }
 
-    function getDebtBetweenInterestRateAndTrove(
+    function getDebtBetweenNCRAndTrove(
         uint256 _collIndex,
-        uint256 _interestRateLo, // inclusive
-        uint256 _interestRateHi, // exclusive
+        uint256 _ncrLo, // inclusive (lower NCR, further down the list)
+        uint256 _ncrHi, // exclusive (higher NCR, closer to head)
         uint256 _troveIdToStopAt, // excluded
         uint256 _hintId,
         uint256 _numTrials
@@ -150,8 +154,8 @@ contract DebtInFrontHelper is IDebtInFrontHelper {
         return
             _getDebtBetween(
                 _collIndex,
-                _interestRateLo,
-                _interestRateHi,
+                _ncrLo,
+                _ncrHi,
                 _troveIdToStopAt,
                 true,
                 _hintId,

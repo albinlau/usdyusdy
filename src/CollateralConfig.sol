@@ -6,6 +6,7 @@ import "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.s
 import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
 import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
 import "./Interfaces/ICollateralConfig.sol";
+import "./Interfaces/IActivePool.sol";
 
 /**
  * @title CollateralConfig
@@ -21,6 +22,7 @@ contract CollateralConfig is
     // --- State Variables ---
 
     Config private config;
+    IActivePool public activePool;
 
     // Constants
     uint256 private constant DECIMAL_PRECISION = 1e18;
@@ -35,15 +37,20 @@ contract CollateralConfig is
      * @notice Initialize the CollateralConfig contract
      * @param _initialOwner Owner address (typically governance or multisig)
      * @param _treasury Initial treasury address
+     * @param _activePool ActivePool contract address
      */
     function initialize(
         address _initialOwner,
-        address _treasury
+        address _treasury,
+        address _activePool
     ) public initializer {
         __Ownable_init();
         transferOwnership(_initialOwner);
 
         _requireValidAddress(_treasury);
+        _requireValidAddress(_activePool);
+
+        activePool = IActivePool(_activePool);
 
         config = Config({
             isFrozen: false,
@@ -105,11 +112,17 @@ contract CollateralConfig is
     /**
      * @notice Update collateral annual interest rate
      * @param _rate Annual interest rate in 18 decimals (e.g., 5e16 = 5%)
+     * @dev Triggers mintAggInterest before updating rate to settle old rate's interest
      */
-    function setCollAnnualInterestRate(
-        uint256 _rate
-    ) external override onlyOwner {
+    function setAnnualInterestRate(uint256 _rate) external override onlyOwner {
         _requireValidInterestRate(_rate);
+
+        uint256 oldRate = config.annualInterestRate;
+        if (oldRate == _rate) return;
+
+        // This ensures historical interest is calculated at the old rate
+        activePool.mintAggInterest();
+
         config.annualInterestRate = _rate;
         emit AnnualInterestRateUpdated(_rate);
     }
@@ -137,12 +150,7 @@ contract CollateralConfig is
         return config.isPaused;
     }
 
-    function getCollAnnualInterestRate()
-        external
-        view
-        override
-        returns (uint256)
-    {
+    function getAnnualInterestRate() external view override returns (uint256) {
         return config.annualInterestRate;
     }
 

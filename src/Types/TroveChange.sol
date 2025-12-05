@@ -9,9 +9,4 @@ struct TroveChange {
     uint256 collDecrease;
     uint256 debtIncrease;
     uint256 debtDecrease;
-    uint256 newWeightedRecordedDebt;
-    uint256 oldWeightedRecordedDebt;
-    uint256 batchAccruedManagementFee;
-    uint256 newWeightedRecordedBatchManagementFee;
-    uint256 oldWeightedRecordedBatchManagementFee;
 }

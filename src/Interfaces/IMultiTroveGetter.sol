@@ -12,18 +12,14 @@ interface IMultiTroveGetter {
         uint256 accruedInterest;
         uint256 recordedDebt;
         uint256 annualInterestRate;
-        uint256 accruedBatchManagementFee;
         uint256 lastInterestRateAdjTime;
         uint256 stake;
         uint256 lastDebtUpdateTime;
-        address interestBatchManager;
-        uint256 batchDebtShares;
         uint256 snapshotETH;
         uint256 snapshotUSDXDebt;
     }
 
     struct DebtPerInterestRate {
-        address interestBatchManager;
         uint256 interestRate;
         uint256 debt;
     }

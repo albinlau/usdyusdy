@@ -26,10 +26,6 @@ uint256 constant MCR_SETH = 120 * _1pct;
 uint256 constant SCR_WETH = 110 * _1pct;
 uint256 constant SCR_SETH = 120 * _1pct;
 
-// Batch CR buffer (same for all branches for now)
-// On top of MCR to join a batch, or adjust inside a batch
-uint256 constant BCR_ALL = 10 * _1pct;
-
 uint256 constant LIQUIDATION_PENALTY_SP_WETH = 5 * _1pct;
 uint256 constant LIQUIDATION_PENALTY_SP_SETH = 5 * _1pct;
 
@@ -46,18 +42,7 @@ uint256 constant MIN_DEBT = 2000e18;
 uint256 constant MIN_ANNUAL_INTEREST_RATE = _1pct / 2; // 0.5%
 uint256 constant MAX_ANNUAL_INTEREST_RATE = 250 * _1pct;
 
-// Batch management params
-uint128 constant MAX_ANNUAL_BATCH_MANAGEMENT_FEE = uint128(_100pct / 10); // 10%
-uint128 constant MIN_INTEREST_RATE_CHANGE_PERIOD = 1 hours; // only applies to batch managers / batched Troves
-
 uint256 constant REDEMPTION_FEE_FLOOR = _1pct / 2; // 0.5%
-
-// For the debt / shares ratio to increase by a factor 1e9
-// at a average annual debt increase (compounded interest + fees) of 10%, it would take more than 217 years (log(1e9)/log(1.1))
-// at a average annual debt increase (compounded interest + fees) of 50%, it would take more than 51 years (log(1e9)/log(1.5))
-// The increase pace could be forced to be higher through an inflation attack,
-// but precisely the fact that we have this max value now prevents the attack
-uint256 constant MAX_BATCH_SHARES_RATIO = 1e9;
 
 // Half-life of 6h. 6h = 360 min
 // (1/2) = d^360 => d = (1/2)^(1/360)

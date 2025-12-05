@@ -4,7 +4,6 @@ pragma solidity 0.8.28;
 
 import "./Interfaces/ICollateralRegistry.sol";
 import "./Interfaces/IMultiTroveGetter.sol";
-import "./Types/BatchId.sol";
 
 /*  Helper contract for grabbing Trove data for the front end. Not part of the core Liquity system. */
 contract MultiTroveGetter is IMultiTroveGetter {
@@ -87,8 +86,6 @@ contract MultiTroveGetter is IMultiTroveGetter {
         _out.accruedInterest = troveData.accruedInterest;
         _out.recordedDebt = troveData.recordedDebt;
         _out.annualInterestRate = troveData.annualInterestRate;
-        _out.accruedBatchManagementFee = troveData.accruedBatchManagementFee;
-        _out.lastInterestRateAdjTime = troveData.lastInterestRateAdjTime;
 
         (
             ,
@@ -98,11 +95,7 @@ contract MultiTroveGetter is IMultiTroveGetter {
             _out.stake, // status // arrayIndex
             ,
             ,
-            _out.lastDebtUpdateTime, // lastInterestRateAdjTime // annualInterestRate
-            ,
-            ,
-            _out.interestBatchManager,
-            _out.batchDebtShares
+            _out.lastDebtUpdateTime
         ) = _troveManager.Troves(_id);
 
         (_out.snapshotETH, _out.snapshotUSDXDebt) = _troveManager
@@ -175,12 +168,10 @@ contract MultiTroveGetter is IMultiTroveGetter {
         for (uint256 i = 0; i < _maxIterations; ++i) {
             if (currId == 0) break;
 
-            (, uint256 prevId, BatchId interestBatchManager, ) = sortedTroves
-                .nodes(currId);
+            (, uint256 prevId, ) = sortedTroves.nodes(currId);
             LatestTroveData memory trove = troveManager.getLatestTroveData(
                 currId
             );
-            data[i].interestBatchManager = BatchId.unwrap(interestBatchManager);
             data[i].interestRate = trove.annualInterestRate;
             data[i].debt = trove.entireDebt;
 

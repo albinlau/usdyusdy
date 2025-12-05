@@ -17,7 +17,8 @@ contract HintHelpers is IHintHelpers {
     }
 
     /* getApproxHint() - return id of a Trove that is, on average, (length / numTrials) positions away in the
-    sortedTroves list from the correct insert position of the Trove to be inserted. 
+    sortedTroves list from the correct insert position of the Trove to be inserted.
+    Now uses NCR (Nominal Collateral Ratio) since SortedTroves sorts by NCR.
     
     Note: The output id is worst-case O(n) positions away from the correct insert position, however, the function
     is probabilistic. Input can be tuned to guarantee results to a high degree of confidence, e.g:
@@ -27,7 +28,7 @@ contract HintHelpers is IHintHelpers {
     */
     function getApproxHint(
         uint256 _collIndex,
-        uint256 _interestRate,
+        uint256 _ncr,
         uint256 _numTrials,
         uint256 _inputRandomSeed
     )
@@ -48,8 +49,8 @@ contract HintHelpers is IHintHelpers {
 
         hintId = sortedTroves.getLast();
         diff = LiquityMath._getAbsoluteDifference(
-            _interestRate,
-            troveManager.getTroveAnnualInterestRate(hintId)
+            _ncr,
+            troveManager.getTroveNominalCR(hintId)
         );
         latestRandomSeed = _inputRandomSeed;
 
@@ -66,13 +67,12 @@ contract HintHelpers is IHintHelpers {
             // Skip this Trove if it's zombie and not in the sorted list
             if (!sortedTroves.contains(currentId)) continue;
 
-            uint256 currentInterestRate = troveManager
-                .getTroveAnnualInterestRate(currentId);
+            uint256 currentNCR = troveManager.getTroveNominalCR(currentId);
 
-            // check if abs(current - IR) > abs(closest - IR), and update closest if current is closer
+            // check if abs(current - NCR) > abs(closest - NCR), and update closest if current is closer
             uint256 currentDiff = LiquityMath._getAbsoluteDifference(
-                currentInterestRate,
-                _interestRate
+                currentNCR,
+                _ncr
             );
 
             if (currentDiff < diff) {

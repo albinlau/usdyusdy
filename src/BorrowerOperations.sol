@@ -17,7 +17,6 @@ import "./Interfaces/ICollateralConfig.sol";
 import "./Dependencies/LiquityBase.sol";
 import "./Dependencies/AddRemoveManagers.sol";
 import "./Types/LatestTroveData.sol";
-import "./Types/LatestBatchData.sol";
 
 contract BorrowerOperations is
     Initializable,
@@ -54,28 +53,6 @@ contract BorrowerOperations is
     // Minimum collateral ratio for individual troves
     uint256 public immutable MCR;
 
-    // Extra buffer of collateral ratio to join a batch or adjust a trove inside a batch (on top of MCR)
-    uint256 public immutable BCR;
-
-    /*
-     * Mapping from TroveId to individual delegate for interest rate setting.
-     *
-     * This address then has the ability to update the borrower’s interest rate, but not change its debt or collateral.
-     * Useful for instance for cold/hot wallet setups.
-     */
-    mapping(uint256 => InterestIndividualDelegate)
-        private interestIndividualDelegateOf;
-
-    /*
-     * Mapping from TroveId to granted address for interest rate setting (batch manager).
-     *
-     * Batch managers set the interest rate for every Trove in the batch. The interest rate is the same for all Troves in the batch.
-     */
-    mapping(uint256 => address) public interestBatchManagerOf;
-
-    // List of registered Interest Batch Managers
-    mapping(address => InterestBatchManager) private interestBatchManagers;
-
     /* --- Variable container structs  ---
 
     Used to hold, return and assign variables inside a function, in order to avoid the error:
@@ -85,7 +62,6 @@ contract BorrowerOperations is
         ITroveManager troveManager;
         uint256 troveId;
         TroveChange change;
-        LatestBatchData batch;
     }
 
     struct LocalVariables_openTrove {
@@ -113,35 +89,10 @@ contract BorrowerOperations is
         bool newOracleFailureDetected;
     }
 
-    struct LocalVariables_setInterestBatchManager {
-        ITroveManager troveManager;
-        IActivePool activePool;
-        ISortedTroves sortedTroves;
-        address oldBatchManager;
-        LatestTroveData trove;
-        LatestBatchData oldBatch;
-        LatestBatchData newBatch;
-    }
-
-    struct LocalVariables_removeFromBatch {
-        ITroveManager troveManager;
-        ISortedTroves sortedTroves;
-        address batchManager;
-        LatestTroveData trove;
-        LatestBatchData batch;
-        uint256 batchFutureDebt;
-        TroveChange batchChange;
-    }
-
     error IsShutDown();
     error TCRNotBelowSCR();
     error ZeroAdjustment();
-    error NotOwnerNorInterestManager();
-    error TroveInBatch();
-    error TroveNotInBatch();
     error InterestNotInRange();
-    error BatchInterestRateChangePeriodNotPassed();
-    error DelegateInterestRateChangePeriodNotPassed();
     error TroveExists();
     error TroveNotOpen();
     error TroveNotActive();
@@ -157,9 +108,6 @@ contract BorrowerOperations is
     error InterestRateTooLow();
     error InterestRateTooHigh();
     error InterestRateNotNew();
-    error InvalidInterestBatchManager();
-    error BatchManagerExists();
-    error BatchManagerNotNew();
     error NewFeeNotLower();
     error CallerNotTroveManager();
     error CallerNotPriceFeed();
@@ -167,7 +115,6 @@ contract BorrowerOperations is
     error AnnualManagementFeeTooHigh();
     error MinInterestRateChangePeriodTooLow();
     error NewOracleFailureDetected();
-    error BatchSharesRatioTooLow();
 
     event TroveManagerAddressChanged(address _newTroveManagerAddress);
     event GasPoolAddressChanged(address _gasPoolAddress);
@@ -192,7 +139,6 @@ contract BorrowerOperations is
         CCR = _addressesRegistry.CCR();
         SCR = _addressesRegistry.SCR();
         MCR = _addressesRegistry.MCR();
-        BCR = _addressesRegistry.BCR();
 
         troveManager = _addressesRegistry.troveManager();
         gasPoolAddress = _addressesRegistry.gasPoolAddress();
@@ -228,13 +174,10 @@ contract BorrowerOperations is
         uint256 _usdxAmount,
         uint256 _upperHint,
         uint256 _lowerHint,
-        uint256 _annualInterestRate,
         address _addManager,
         address _removeManager,
         address _receiver
     ) external override returns (uint256) {
-        _requireValidAnnualInterestRate(_annualInterestRate);
-
         OpenTroveVars memory vars;
 
         vars.troveId = _openTrove(
@@ -242,10 +185,6 @@ contract BorrowerOperations is
             _ownerIndex,
             _collAmount,
             _usdxAmount,
-            _annualInterestRate,
-            address(0),
-            0,
-            0,
             _addManager,
             _removeManager,
             _receiver,
@@ -253,75 +192,14 @@ contract BorrowerOperations is
         );
 
         // Set the stored Trove properties and mint the NFT
-        troveManager.onOpenTrove(
-            _owner,
-            vars.troveId,
-            vars.change,
-            _annualInterestRate
+        troveManager.onOpenTrove(_owner, vars.troveId, vars.change);
+
+        // Use NCR (Nominal Collateral Ratio) for sorting
+        uint256 ncr = LiquityMath._computeNominalCR(
+            vars.change.collIncrease,
+            vars.change.debtIncrease
         );
-
-        sortedTroves.insert(
-            vars.troveId,
-            _annualInterestRate,
-            _upperHint,
-            _lowerHint
-        );
-
-        return vars.troveId;
-    }
-
-    function openTroveAndJoinInterestBatchManager(
-        OpenTroveAndJoinInterestBatchManagerParams calldata _params
-    ) external override returns (uint256) {
-        _requireValidInterestBatchManager(_params.interestBatchManager);
-
-        OpenTroveVars memory vars;
-        vars.troveManager = troveManager;
-
-        vars.batch = vars.troveManager.getLatestBatchData(
-            _params.interestBatchManager
-        );
-
-        // We set old weighted values here, as it’s only necessary for batches, so we don’t need to pass them to _openTrove func
-        vars.change.batchAccruedManagementFee = vars.batch.accruedManagementFee;
-        vars.change.oldWeightedRecordedDebt = vars.batch.weightedRecordedDebt;
-        vars.change.oldWeightedRecordedBatchManagementFee = vars
-            .batch
-            .weightedRecordedBatchManagementFee;
-        vars.troveId = _openTrove(
-            _params.owner,
-            _params.ownerIndex,
-            _params.collAmount,
-            _params.usdxAmount,
-            vars.batch.annualInterestRate,
-            _params.interestBatchManager,
-            vars.batch.entireDebtWithoutRedistribution,
-            vars.batch.annualManagementFee,
-            _params.addManager,
-            _params.removeManager,
-            _params.receiver,
-            vars.change
-        );
-
-        interestBatchManagerOf[vars.troveId] = _params.interestBatchManager;
-
-        // Set the stored Trove properties and mint the NFT
-        vars.troveManager.onOpenTroveAndJoinBatch(
-            _params.owner,
-            vars.troveId,
-            vars.change,
-            _params.interestBatchManager,
-            vars.batch.entireCollWithoutRedistribution,
-            vars.batch.entireDebtWithoutRedistribution
-        );
-
-        sortedTroves.insertIntoBatch(
-            vars.troveId,
-            BatchId.wrap(_params.interestBatchManager),
-            vars.batch.annualInterestRate,
-            _params.upperHint,
-            _params.lowerHint
-        );
+        sortedTroves.insert(vars.troveId, ncr, _upperHint, _lowerHint);
 
         return vars.troveId;
     }
@@ -331,10 +209,6 @@ contract BorrowerOperations is
         uint256 _ownerIndex,
         uint256 _collAmount,
         uint256 _usdxAmount,
-        uint256 _annualInterestRate,
-        address _interestBatchManager,
-        uint256 _batchEntireDebt,
-        uint256 _batchManagementAnnualFee,
         address _addManager,
         address _removeManager,
         address _receiver,
@@ -363,11 +237,6 @@ contract BorrowerOperations is
         _change.collIncrease = _collAmount;
         _change.debtIncrease = _usdxAmount;
 
-        // For simplicity, we ignore the fee when calculating the approx. interest rate
-        _change.newWeightedRecordedDebt =
-            (_batchEntireDebt + _change.debtIncrease) *
-            _annualInterestRate;
-
         vars.avgInterestRate = vars
             .activePool
             .getNewApproxAvgInterestRateFromTroveChange(_change);
@@ -381,27 +250,8 @@ contract BorrowerOperations is
             vars.price
         );
 
-        // Recalculate newWeightedRecordedDebt, taking into account the batch fee if needed
-        if (_interestBatchManager == address(0)) {
-            _change.newWeightedRecordedDebt =
-                vars.entireDebt *
-                _annualInterestRate;
-
-            // ICR is based on the requested USDX amount.
-            _requireICRisAboveMCR(vars.ICR);
-        } else {
-            // old values have been set outside, before calling this function
-            _change.newWeightedRecordedDebt =
-                (_batchEntireDebt + vars.entireDebt) *
-                _annualInterestRate;
-            _change.newWeightedRecordedBatchManagementFee =
-                (_batchEntireDebt + vars.entireDebt) *
-                _batchManagementAnnualFee;
-
-            // ICR is based on the requested USDX amount.
-            // Troves in a batch have a stronger requirement (MCR+BCR)
-            _requireICRisAboveMCRPlusBCR(vars.ICR);
-        }
+        // ICR is based on the requested USDX amount.
+        _requireICRisAboveMCR(vars.ICR);
 
         vars.newTCR = _getNewTCRFromTroveChange(_change, vars.price);
         _requireNewTCRisAboveCCR(vars.newTCR);
@@ -412,10 +262,7 @@ contract BorrowerOperations is
         _setAddManager(vars.troveId, _addManager);
         _setRemoveManagerAndReceiver(vars.troveId, _removeManager, _receiver);
 
-        vars.activePool.mintAggInterestAndAccountForTroveChange(
-            _change,
-            _interestBatchManager
-        );
+        vars.activePool.mintAggInterestAndAccountForTroveChange(_change);
 
         // Pull coll tokens from sender and move them to the Active Pool
         _pullCollAndSendToActivePool(vars.activePool, _collAmount);
@@ -544,77 +391,16 @@ contract BorrowerOperations is
 
         troveManagerCached.setTroveStatusToActive(_troveId);
 
-        address batchManager = interestBatchManagerOf[_troveId];
-        uint256 batchAnnualInterestRate;
-        if (batchManager != address(0)) {
-            LatestBatchData memory batch = troveManagerCached
-                .getLatestBatchData(batchManager);
-            batchAnnualInterestRate = batch.annualInterestRate;
-        }
-        _reInsertIntoSortedTroves(
-            _troveId,
-            troveManagerCached.getTroveAnnualInterestRate(_troveId),
-            _upperHint,
-            _lowerHint,
-            batchManager,
-            batchAnnualInterestRate
-        );
-    }
-
-    function adjustTroveInterestRate(
-        uint256 _troveId,
-        uint256 _newAnnualInterestRate,
-        uint256 _upperHint,
-        uint256 _lowerHint
-    ) external override {
-        _requireIsNotShutDown();
-
-        ITroveManager troveManagerCached = troveManager;
-
-        _requireValidAnnualInterestRate(_newAnnualInterestRate);
-        _requireIsNotInBatch(_troveId);
-        _requireSenderIsOwnerOrInterestManager(_troveId);
-        _requireTroveIsActive(troveManagerCached, _troveId);
-
+        // Calculate NCR for reinsertion
         LatestTroveData memory trove = troveManagerCached.getLatestTroveData(
             _troveId
         );
-        _requireValidDelegateAdjustment(
-            _troveId,
-            trove.lastInterestRateAdjTime,
-            _newAnnualInterestRate
-        );
-        _requireAnnualInterestRateIsNew(
-            trove.annualInterestRate,
-            _newAnnualInterestRate
-        );
-
-        uint256 newDebt = trove.entireDebt;
-
-        TroveChange memory troveChange;
-        troveChange.appliedRedistUSDXDebtGain = trove.redistUSDXDebtGain;
-        troveChange.appliedRedistCollGain = trove.redistCollGain;
-        troveChange.newWeightedRecordedDebt = newDebt * _newAnnualInterestRate;
-        troveChange.oldWeightedRecordedDebt = trove.weightedRecordedDebt;
-
-        activePool.mintAggInterestAndAccountForTroveChange(
-            troveChange,
-            address(0)
-        );
-
-        sortedTroves.reInsert(
-            _troveId,
-            _newAnnualInterestRate,
-            _upperHint,
-            _lowerHint
-        );
-        troveManagerCached.onAdjustTroveInterestRate(
-            _troveId,
+        uint256 ncr = LiquityMath._computeNominalCR(
             trove.entireColl,
-            newDebt,
-            _newAnnualInterestRate,
-            troveChange
+            trove.entireDebt
         );
+
+        _reInsertIntoSortedTroves(_troveId, ncr, _upperHint, _lowerHint);
     }
 
     /*
@@ -700,63 +486,8 @@ contract BorrowerOperations is
             _troveChange.debtIncrease -
             _troveChange.debtDecrease;
 
-        address batchManager = interestBatchManagerOf[_troveId];
-        bool isTroveInBatch = batchManager != address(0);
-        LatestBatchData memory batch;
-        uint256 batchFutureDebt;
-        if (isTroveInBatch) {
-            batch = _troveManager.getLatestBatchData(batchManager);
-
-            batchFutureDebt =
-                batch.entireDebtWithoutRedistribution +
-                vars.trove.redistUSDXDebtGain +
-                _troveChange.debtIncrease -
-                _troveChange.debtDecrease;
-
-            _troveChange.appliedRedistUSDXDebtGain = vars
-                .trove
-                .redistUSDXDebtGain;
-            _troveChange.appliedRedistCollGain = vars.trove.redistCollGain;
-            _troveChange.batchAccruedManagementFee = batch.accruedManagementFee;
-            _troveChange.oldWeightedRecordedDebt = batch.weightedRecordedDebt;
-            _troveChange.newWeightedRecordedDebt =
-                batchFutureDebt *
-                batch.annualInterestRate;
-            _troveChange.oldWeightedRecordedBatchManagementFee = batch
-                .weightedRecordedBatchManagementFee;
-            _troveChange.newWeightedRecordedBatchManagementFee =
-                batchFutureDebt *
-                batch.annualManagementFee;
-        } else {
-            _troveChange.appliedRedistUSDXDebtGain = vars
-                .trove
-                .redistUSDXDebtGain;
-            _troveChange.appliedRedistCollGain = vars.trove.redistCollGain;
-            _troveChange.oldWeightedRecordedDebt = vars
-                .trove
-                .weightedRecordedDebt;
-            _troveChange.newWeightedRecordedDebt =
-                vars.newDebt *
-                vars.trove.annualInterestRate;
-        }
-
-        // Update weighted debt on debt increases
-        if (_troveChange.debtIncrease > 0) {
-            if (isTroveInBatch) {
-                // Recalculate newWeightedRecordedDebt
-                _troveChange.newWeightedRecordedDebt =
-                    batchFutureDebt *
-                    batch.annualInterestRate;
-                _troveChange.newWeightedRecordedBatchManagementFee =
-                    batchFutureDebt *
-                    batch.annualManagementFee;
-            } else {
-                // Recalculate newWeightedRecordedDebt
-                _troveChange.newWeightedRecordedDebt =
-                    vars.newDebt *
-                    vars.trove.annualInterestRate;
-            }
-        }
+        _troveChange.appliedRedistUSDXDebtGain = vars.trove.redistUSDXDebtGain;
+        _troveChange.appliedRedistCollGain = vars.trove.redistCollGain;
 
         // Make sure the Trove doesn't end up zombie
         // Now the max repayment is capped to stay above MIN_DEBT, so this only applies to adjustZombieTrove
@@ -769,37 +500,18 @@ contract BorrowerOperations is
         );
 
         // Check the adjustment satisfies all conditions for the current system mode
-        _requireValidAdjustmentInCurrentMode(
-            _troveChange,
-            vars,
-            isTroveInBatch
-        );
+        _requireValidAdjustmentInCurrentMode(_troveChange, vars);
 
         // --- Effects and interactions ---
 
-        if (isTroveInBatch) {
-            _troveManager.onAdjustTroveInsideBatch(
-                _troveId,
-                vars.newColl,
-                vars.newDebt,
-                _troveChange,
-                batchManager,
-                batch.entireCollWithoutRedistribution,
-                batch.entireDebtWithoutRedistribution
-            );
-        } else {
-            _troveManager.onAdjustTrove(
-                _troveId,
-                vars.newColl,
-                vars.newDebt,
-                _troveChange
-            );
-        }
-
-        vars.activePool.mintAggInterestAndAccountForTroveChange(
-            _troveChange,
-            batchManager
+        _troveManager.onAdjustTrove(
+            _troveId,
+            vars.newColl,
+            vars.newDebt,
+            _troveChange
         );
+
+        vars.activePool.mintAggInterestAndAccountForTroveChange(_troveChange);
         _moveTokensFromAdjustment(
             receiver,
             _troveChange,
@@ -826,7 +538,7 @@ contract BorrowerOperations is
             _troveId
         );
 
-        // The borrower must repay their entire debt including accrued interest, batch fee and redist. gains
+        // The borrower must repay their entire debt including accrued interest and redist. gains
         _requireSufficientUSDXBalance(
             usdxTokenCached,
             msg.sender,
@@ -839,49 +551,13 @@ contract BorrowerOperations is
         troveChange.collDecrease = trove.entireColl;
         troveChange.debtDecrease = trove.entireDebt;
 
-        address batchManager = interestBatchManagerOf[_troveId];
-        LatestBatchData memory batch;
-        if (batchManager != address(0)) {
-            batch = troveManagerCached.getLatestBatchData(batchManager);
-            uint256 batchFutureDebt = batch.entireDebtWithoutRedistribution -
-                (trove.entireDebt - trove.redistUSDXDebtGain);
-            troveChange.batchAccruedManagementFee = batch.accruedManagementFee;
-            troveChange.oldWeightedRecordedDebt = batch.weightedRecordedDebt;
-            troveChange.newWeightedRecordedDebt =
-                batchFutureDebt *
-                batch.annualInterestRate;
-            troveChange.oldWeightedRecordedBatchManagementFee = batch
-                .weightedRecordedBatchManagementFee;
-            troveChange.newWeightedRecordedBatchManagementFee =
-                batchFutureDebt *
-                batch.annualManagementFee;
-        } else {
-            troveChange.oldWeightedRecordedDebt = trove.weightedRecordedDebt;
-            // troveChange.newWeightedRecordedDebt = 0;
-        }
-
         (uint256 price, ) = priceFeed.fetchPrice();
         uint256 newTCR = _getNewTCRFromTroveChange(troveChange, price);
         if (!hasBeenShutDown) _requireNewTCRisAboveCCR(newTCR);
 
-        troveManagerCached.onCloseTrove(
-            _troveId,
-            troveChange,
-            batchManager,
-            batch.entireCollWithoutRedistribution,
-            batch.entireDebtWithoutRedistribution
-        );
+        troveManagerCached.onCloseTrove(_troveId, troveChange);
 
-        // If trove is in batch
-        if (batchManager != address(0)) {
-            // Unlink here in BorrowerOperations
-            interestBatchManagerOf[_troveId] = address(0);
-        }
-
-        activePoolCached.mintAggInterestAndAccountForTroveChange(
-            troveChange,
-            batchManager
-        );
+        activePoolCached.mintAggInterestAndAccountForTroveChange(troveChange);
 
         // Return ETH gas compensation
         WETH.transferFrom(gasPoolAddress, receiver, ETH_GAS_COMPENSATION);
@@ -914,43 +590,13 @@ contract BorrowerOperations is
         change.appliedRedistUSDXDebtGain = trove.redistUSDXDebtGain;
         change.appliedRedistCollGain = trove.redistCollGain;
 
-        address batchManager = interestBatchManagerOf[_troveId];
-        LatestBatchData memory batch;
-
-        if (batchManager == address(0)) {
-            change.oldWeightedRecordedDebt = trove.weightedRecordedDebt;
-            change.newWeightedRecordedDebt =
-                trove.entireDebt *
-                trove.annualInterestRate;
-        } else {
-            batch = troveManagerCached.getLatestBatchData(batchManager);
-            change.batchAccruedManagementFee = batch.accruedManagementFee;
-            change.oldWeightedRecordedDebt = batch.weightedRecordedDebt;
-            change.newWeightedRecordedDebt =
-                (batch.entireDebtWithoutRedistribution +
-                    trove.redistUSDXDebtGain) *
-                batch.annualInterestRate;
-            change.oldWeightedRecordedBatchManagementFee = batch
-                .weightedRecordedBatchManagementFee;
-            change.newWeightedRecordedBatchManagementFee =
-                (batch.entireDebtWithoutRedistribution +
-                    trove.redistUSDXDebtGain) *
-                batch.annualManagementFee;
-        }
-
         troveManagerCached.onApplyTroveInterest(
             _troveId,
             trove.entireColl,
             trove.entireDebt,
-            batchManager,
-            batch.entireCollWithoutRedistribution,
-            batch.entireDebtWithoutRedistribution,
             change
         );
-        activePool.mintAggInterestAndAccountForTroveChange(
-            change,
-            batchManager
-        );
+        activePool.mintAggInterestAndAccountForTroveChange(change);
 
         // If the trove was zombie, and now it’s not anymore, put it back in the list
         if (
@@ -960,468 +606,14 @@ contract BorrowerOperations is
             troveManagerCached.setTroveStatusToActive(_troveId);
             _reInsertIntoSortedTroves(
                 _troveId,
-                trove.annualInterestRate,
-                _upperHint,
-                _lowerHint,
-                batchManager,
-                batch.annualInterestRate
-            );
-        }
-    }
-
-    function getInterestIndividualDelegateOf(
-        uint256 _troveId
-    ) external view returns (InterestIndividualDelegate memory) {
-        return interestIndividualDelegateOf[_troveId];
-    }
-
-    function setInterestIndividualDelegate(
-        uint256 _troveId,
-        address _delegate,
-        uint128 _minInterestRate,
-        uint128 _maxInterestRate,
-        // only needed if trove was previously in a batch:
-        uint256 _newAnnualInterestRate,
-        uint256 _upperHint,
-        uint256 _lowerHint,
-        uint256 _minInterestRateChangePeriod
-    ) external override {
-        _requireIsNotShutDown();
-        _requireTroveIsActive(troveManager, _troveId);
-        _requireCallerIsBorrower(_troveId);
-        _requireValidAnnualInterestRate(_minInterestRate);
-        _requireValidAnnualInterestRate(_maxInterestRate);
-        // With the check below, it could only be ==
-        _requireOrderedRange(_minInterestRate, _maxInterestRate);
-
-        interestIndividualDelegateOf[_troveId] = InterestIndividualDelegate(
-            _delegate,
-            _minInterestRate,
-            _maxInterestRate,
-            _minInterestRateChangePeriod
-        );
-        // Can’t have both individual delegation and batch manager
-        if (interestBatchManagerOf[_troveId] != address(0)) {
-            // Not needed, implicitly checked in removeFromBatch
-            //_requireValidAnnualInterestRate(_newAnnualInterestRate);
-            removeFromBatch(
-                _troveId,
-                _newAnnualInterestRate,
+                LiquityMath._computeNominalCR(
+                    trove.entireColl,
+                    trove.entireDebt
+                ),
                 _upperHint,
                 _lowerHint
             );
         }
-    }
-
-    function removeInterestIndividualDelegate(uint256 _troveId) external {
-        _requireCallerIsBorrower(_troveId);
-        delete interestIndividualDelegateOf[_troveId];
-    }
-
-    function getInterestBatchManager(
-        address _account
-    ) external view returns (InterestBatchManager memory) {
-        return interestBatchManagers[_account];
-    }
-
-    function registerBatchManager(
-        uint128 _minInterestRate,
-        uint128 _maxInterestRate,
-        uint128 _currentInterestRate,
-        uint128 _annualManagementFee,
-        uint128 _minInterestRateChangePeriod
-    ) external {
-        _requireIsNotShutDown();
-        _requireNonExistentInterestBatchManager(msg.sender);
-        _requireValidAnnualInterestRate(_minInterestRate);
-        _requireValidAnnualInterestRate(_maxInterestRate);
-        // With the check below, it could only be ==
-        _requireOrderedRange(_minInterestRate, _maxInterestRate);
-        _requireInterestRateInRange(
-            _currentInterestRate,
-            _minInterestRate,
-            _maxInterestRate
-        );
-        // Not needed, implicitly checked in the condition above:
-        //_requireValidAnnualInterestRate(_currentInterestRate);
-        if (_annualManagementFee > MAX_ANNUAL_BATCH_MANAGEMENT_FEE)
-            revert AnnualManagementFeeTooHigh();
-        if (_minInterestRateChangePeriod < MIN_INTEREST_RATE_CHANGE_PERIOD)
-            revert MinInterestRateChangePeriodTooLow();
-
-        interestBatchManagers[msg.sender] = InterestBatchManager({
-            minInterestRate: _minInterestRate,
-            maxInterestRate: _maxInterestRate,
-            minInterestRateChangePeriod: _minInterestRateChangePeriod
-        });
-
-        troveManager.onRegisterBatchManager(
-            msg.sender,
-            _currentInterestRate,
-            _annualManagementFee
-        );
-    }
-
-    function lowerBatchManagementFee(uint256 _newAnnualManagementFee) external {
-        _requireIsNotShutDown();
-        _requireValidInterestBatchManager(msg.sender);
-
-        ITroveManager troveManagerCached = troveManager;
-
-        LatestBatchData memory batch = troveManagerCached.getLatestBatchData(
-            msg.sender
-        );
-        if (_newAnnualManagementFee >= batch.annualManagementFee) {
-            revert NewFeeNotLower();
-        }
-
-        // Lower batch fee on TM
-        troveManagerCached.onLowerBatchManagerAnnualFee(
-            msg.sender,
-            batch.entireCollWithoutRedistribution,
-            batch.entireDebtWithoutRedistribution,
-            _newAnnualManagementFee
-        );
-
-        // active pool mint
-        TroveChange memory batchChange;
-        batchChange.batchAccruedManagementFee = batch.accruedManagementFee;
-        batchChange.oldWeightedRecordedDebt = batch.weightedRecordedDebt;
-        batchChange.newWeightedRecordedDebt =
-            batch.entireDebtWithoutRedistribution *
-            batch.annualInterestRate;
-        batchChange.oldWeightedRecordedBatchManagementFee = batch
-            .weightedRecordedBatchManagementFee;
-        batchChange.newWeightedRecordedBatchManagementFee =
-            batch.entireDebtWithoutRedistribution *
-            _newAnnualManagementFee;
-
-        activePool.mintAggInterestAndAccountForTroveChange(
-            batchChange,
-            msg.sender
-        );
-    }
-
-    function setBatchManagerAnnualInterestRate(
-        uint128 _newAnnualInterestRate,
-        uint256 _upperHint,
-        uint256 _lowerHint
-    ) external override {
-        _requireIsNotShutDown();
-        _requireValidInterestBatchManager(msg.sender);
-        _requireInterestRateInBatchManagerRange(
-            msg.sender,
-            _newAnnualInterestRate
-        );
-        // Not needed, implicitly checked in the condition above:
-        //_requireValidAnnualInterestRate(_newAnnualInterestRate);
-
-        ITroveManager troveManagerCached = troveManager;
-        IActivePool activePoolCached = activePool;
-
-        LatestBatchData memory batch = troveManagerCached.getLatestBatchData(
-            msg.sender
-        );
-        _requireBatchInterestRateChangePeriodPassed(
-            msg.sender,
-            uint256(batch.lastInterestRateAdjTime)
-        );
-
-        uint256 newDebt = batch.entireDebtWithoutRedistribution;
-
-        TroveChange memory batchChange;
-        batchChange.batchAccruedManagementFee = batch.accruedManagementFee;
-        batchChange.oldWeightedRecordedDebt = batch.weightedRecordedDebt;
-        batchChange.newWeightedRecordedDebt = newDebt * _newAnnualInterestRate;
-        batchChange.oldWeightedRecordedBatchManagementFee = batch
-            .weightedRecordedBatchManagementFee;
-        batchChange.newWeightedRecordedBatchManagementFee =
-            newDebt *
-            batch.annualManagementFee;
-
-        // Check for premature adjustments
-        if (
-            batch.annualInterestRate != _newAnnualInterestRate &&
-            block.timestamp <
-            batch.lastInterestRateAdjTime + INTEREST_RATE_ADJ_COOLDOWN
-        ) {
-            uint256 price = _requireOraclesLive();
-
-            // Recalculate the batch's weighted terms
-            batchChange.newWeightedRecordedDebt =
-                newDebt *
-                _newAnnualInterestRate;
-            batchChange.newWeightedRecordedBatchManagementFee =
-                newDebt *
-                batch.annualManagementFee;
-
-            // Disallow a premature adjustment if it would result in TCR < CCR
-            // (which includes the case when TCR is already below CCR before the adjustment).
-            uint256 newTCR = _getNewTCRFromTroveChange(batchChange, price);
-            _requireNewTCRisAboveCCR(newTCR);
-        }
-
-        activePoolCached.mintAggInterestAndAccountForTroveChange(
-            batchChange,
-            msg.sender
-        );
-
-        // Check batch is not empty, and then reinsert in sorted list
-        if (!sortedTroves.isEmptyBatch(BatchId.wrap(msg.sender))) {
-            sortedTroves.reInsertBatch(
-                BatchId.wrap(msg.sender),
-                _newAnnualInterestRate,
-                _upperHint,
-                _lowerHint
-            );
-        }
-
-        troveManagerCached.onSetBatchManagerAnnualInterestRate(
-            msg.sender,
-            batch.entireCollWithoutRedistribution,
-            newDebt,
-            _newAnnualInterestRate
-        );
-    }
-
-    function setInterestBatchManager(
-        uint256 _troveId,
-        address _newBatchManager,
-        uint256 _upperHint,
-        uint256 _lowerHint
-    ) public override {
-        _requireIsNotShutDown();
-        LocalVariables_setInterestBatchManager memory vars;
-        vars.troveManager = troveManager;
-        vars.activePool = activePool;
-        vars.sortedTroves = sortedTroves;
-
-        _requireTroveIsActive(vars.troveManager, _troveId);
-        _requireCallerIsBorrower(_troveId);
-        _requireValidInterestBatchManager(_newBatchManager);
-        _requireIsNotInBatch(_troveId);
-
-        interestBatchManagerOf[_troveId] = _newBatchManager;
-        // Can’t have both individual delegation and batch manager
-        if (interestIndividualDelegateOf[_troveId].account != address(0))
-            delete interestIndividualDelegateOf[_troveId];
-
-        vars.trove = vars.troveManager.getLatestTroveData(_troveId);
-        vars.newBatch = vars.troveManager.getLatestBatchData(_newBatchManager);
-
-        TroveChange memory newBatchTroveChange;
-        newBatchTroveChange.appliedRedistUSDXDebtGain = vars
-            .trove
-            .redistUSDXDebtGain;
-        newBatchTroveChange.appliedRedistCollGain = vars.trove.redistCollGain;
-        newBatchTroveChange.batchAccruedManagementFee = vars
-            .newBatch
-            .accruedManagementFee;
-        newBatchTroveChange.oldWeightedRecordedDebt =
-            vars.newBatch.weightedRecordedDebt +
-            vars.trove.weightedRecordedDebt;
-        newBatchTroveChange.newWeightedRecordedDebt =
-            (vars.newBatch.entireDebtWithoutRedistribution +
-                vars.trove.entireDebt) *
-            vars.newBatch.annualInterestRate;
-
-        // Recalculate newWeightedRecordedDebt
-        newBatchTroveChange.newWeightedRecordedDebt =
-            (vars.newBatch.entireDebtWithoutRedistribution +
-                vars.trove.entireDebt) *
-            vars.newBatch.annualInterestRate;
-
-        // Add batch fees
-        newBatchTroveChange.oldWeightedRecordedBatchManagementFee = vars
-            .newBatch
-            .weightedRecordedBatchManagementFee;
-        newBatchTroveChange.newWeightedRecordedBatchManagementFee =
-            (vars.newBatch.entireDebtWithoutRedistribution +
-                vars.trove.entireDebt) *
-            vars.newBatch.annualManagementFee;
-        vars.activePool.mintAggInterestAndAccountForTroveChange(
-            newBatchTroveChange,
-            _newBatchManager
-        );
-
-        vars.troveManager.onSetInterestBatchManager(
-            ITroveManager.OnSetInterestBatchManagerParams({
-                troveId: _troveId,
-                troveColl: vars.trove.entireColl,
-                troveDebt: vars.trove.entireDebt,
-                troveChange: newBatchTroveChange,
-                newBatchAddress: _newBatchManager,
-                newBatchColl: vars.newBatch.entireCollWithoutRedistribution,
-                newBatchDebt: vars.newBatch.entireDebtWithoutRedistribution
-            })
-        );
-
-        vars.sortedTroves.remove(_troveId);
-        vars.sortedTroves.insertIntoBatch(
-            _troveId,
-            BatchId.wrap(_newBatchManager),
-            vars.newBatch.annualInterestRate,
-            _upperHint,
-            _lowerHint
-        );
-    }
-
-    function kickFromBatch(
-        uint256 _troveId,
-        uint256 _upperHint,
-        uint256 _lowerHint
-    ) external override {
-        _removeFromBatch({
-            _troveId: _troveId,
-            _newAnnualInterestRate: 0, // ignored when kicking
-            _upperHint: _upperHint,
-            _lowerHint: _lowerHint,
-            _kick: true
-        });
-    }
-
-    function removeFromBatch(
-        uint256 _troveId,
-        uint256 _newAnnualInterestRate,
-        uint256 _upperHint,
-        uint256 _lowerHint
-    ) public override {
-        _removeFromBatch({
-            _troveId: _troveId,
-            _newAnnualInterestRate: _newAnnualInterestRate,
-            _upperHint: _upperHint,
-            _lowerHint: _lowerHint,
-            _kick: false
-        });
-    }
-
-    function _removeFromBatch(
-        uint256 _troveId,
-        uint256 _newAnnualInterestRate,
-        uint256 _upperHint,
-        uint256 _lowerHint,
-        bool _kick
-    ) internal {
-        _requireIsNotShutDown();
-
-        LocalVariables_removeFromBatch memory vars;
-        vars.troveManager = troveManager;
-        vars.sortedTroves = sortedTroves;
-
-        if (_kick) {
-            _requireTroveIsOpen(vars.troveManager, _troveId);
-        } else {
-            _requireTroveIsActive(vars.troveManager, _troveId);
-            _requireCallerIsBorrower(_troveId);
-            _requireValidAnnualInterestRate(_newAnnualInterestRate);
-        }
-
-        vars.batchManager = _requireIsInBatch(_troveId);
-        vars.trove = vars.troveManager.getLatestTroveData(_troveId);
-        vars.batch = vars.troveManager.getLatestBatchData(vars.batchManager);
-
-        if (_kick) {
-            if (
-                vars.batch.totalDebtShares * MAX_BATCH_SHARES_RATIO >=
-                vars.batch.entireDebtWithoutRedistribution
-            ) {
-                revert BatchSharesRatioTooLow();
-            }
-            _newAnnualInterestRate = vars.batch.annualInterestRate;
-        }
-
-        delete interestBatchManagerOf[_troveId];
-
-        if (!_checkTroveIsZombie(vars.troveManager, _troveId)) {
-            // Remove trove from Batch in SortedTroves
-            vars.sortedTroves.removeFromBatch(_troveId);
-            // Reinsert as single trove
-            vars.sortedTroves.insert(
-                _troveId,
-                _newAnnualInterestRate,
-                _upperHint,
-                _lowerHint
-            );
-        }
-
-        vars.batchFutureDebt =
-            vars.batch.entireDebtWithoutRedistribution -
-            (vars.trove.entireDebt - vars.trove.redistUSDXDebtGain);
-
-        vars.batchChange.appliedRedistUSDXDebtGain = vars
-            .trove
-            .redistUSDXDebtGain;
-        vars.batchChange.appliedRedistCollGain = vars.trove.redistCollGain;
-        vars.batchChange.batchAccruedManagementFee = vars
-            .batch
-            .accruedManagementFee;
-        vars.batchChange.oldWeightedRecordedDebt = vars
-            .batch
-            .weightedRecordedDebt;
-        vars.batchChange.newWeightedRecordedDebt =
-            vars.batchFutureDebt *
-            vars.batch.annualInterestRate +
-            vars.trove.entireDebt *
-            _newAnnualInterestRate;
-
-        // Recalculate newWeightedRecordedDebt
-        vars.batchChange.newWeightedRecordedDebt =
-            vars.batchFutureDebt *
-            vars.batch.annualInterestRate +
-            vars.trove.entireDebt *
-            _newAnnualInterestRate;
-        // Add batch fees
-        vars.batchChange.oldWeightedRecordedBatchManagementFee = vars
-            .batch
-            .weightedRecordedBatchManagementFee;
-        vars.batchChange.newWeightedRecordedBatchManagementFee =
-            vars.batchFutureDebt *
-            vars.batch.annualManagementFee;
-
-        activePool.mintAggInterestAndAccountForTroveChange(
-            vars.batchChange,
-            vars.batchManager
-        );
-
-        vars.troveManager.onRemoveFromBatch(
-            _troveId,
-            vars.trove.entireColl,
-            vars.trove.entireDebt,
-            vars.batchChange,
-            vars.batchManager,
-            vars.batch.entireCollWithoutRedistribution,
-            vars.batch.entireDebtWithoutRedistribution,
-            _newAnnualInterestRate
-        );
-    }
-
-    function switchBatchManager(
-        uint256 _troveId,
-        uint256 _removeUpperHint,
-        uint256 _removeLowerHint,
-        address _newBatchManager,
-        uint256 _addUpperHint,
-        uint256 _addLowerHint
-    ) external override {
-        address oldBatchManager = _requireIsInBatch(_troveId);
-        _requireNewInterestBatchManager(oldBatchManager, _newBatchManager);
-
-        LatestBatchData memory oldBatch = troveManager.getLatestBatchData(
-            oldBatchManager
-        );
-
-        removeFromBatch(
-            _troveId,
-            oldBatch.annualInterestRate,
-            _removeUpperHint,
-            _removeLowerHint
-        );
-        setInterestBatchManager(
-            _troveId,
-            _newBatchManager,
-            _addUpperHint,
-            _addLowerHint
-        );
     }
 
     // Call from TM to clean state here
@@ -1432,8 +624,6 @@ contract BorrowerOperations is
     }
 
     function _wipeTroveMappings(uint256 _troveId) internal {
-        delete interestIndividualDelegateOf[_troveId];
-        delete interestBatchManagerOf[_troveId];
         _wipeAddRemoveManagers(_troveId);
     }
 
@@ -1484,29 +674,11 @@ contract BorrowerOperations is
 
     function _reInsertIntoSortedTroves(
         uint256 _troveId,
-        uint256 _troveAnnualInterestRate,
+        uint256 _ncr,
         uint256 _upperHint,
-        uint256 _lowerHint,
-        address _batchManager,
-        uint256 _batchAnnualInterestRate
+        uint256 _lowerHint
     ) internal {
-        // If it was in a batch, we need to put it back, otherwise we insert it normally
-        if (_batchManager == address(0)) {
-            sortedTroves.insert(
-                _troveId,
-                _troveAnnualInterestRate,
-                _upperHint,
-                _lowerHint
-            );
-        } else {
-            sortedTroves.insertIntoBatch(
-                _troveId,
-                BatchId.wrap(_batchManager),
-                _batchAnnualInterestRate,
-                _upperHint,
-                _lowerHint
-            );
-        }
+        sortedTroves.insert(_troveId, _ncr, _upperHint, _lowerHint);
     }
 
     // This function mints the USDX corresponding to the borrower's chosen debt increase
@@ -1545,12 +717,6 @@ contract BorrowerOperations is
         _activePool.accountForReceivedColl(_amount);
     }
 
-    function checkBatchManagerExists(
-        address _batchManager
-    ) external view returns (bool) {
-        return interestBatchManagers[_batchManager].maxInterestRate > 0;
-    }
-
     // --- 'Require' wrapper functions ---
 
     function _requireIsNotShutDown() internal view {
@@ -1570,57 +736,6 @@ contract BorrowerOperations is
         ) {
             revert ZeroAdjustment();
         }
-    }
-
-    function _requireSenderIsOwnerOrInterestManager(
-        uint256 _troveId
-    ) internal view {
-        address owner = troveNFT.ownerOf(_troveId);
-        if (
-            msg.sender != owner &&
-            msg.sender != interestIndividualDelegateOf[_troveId].account
-        ) {
-            revert NotOwnerNorInterestManager();
-        }
-    }
-
-    function _requireValidDelegateAdjustment(
-        uint256 _troveId,
-        uint256 _lastInterestRateAdjTime,
-        uint256 _annualInterestRate
-    ) internal view {
-        InterestIndividualDelegate
-            memory individualDelegate = interestIndividualDelegateOf[_troveId];
-        // We have previously checked that sender is either owner or delegate
-        // If it’s owner, this restriction doesn’t apply
-        if (individualDelegate.account == msg.sender) {
-            _requireInterestRateInRange(
-                _annualInterestRate,
-                individualDelegate.minInterestRate,
-                individualDelegate.maxInterestRate
-            );
-            _requireDelegateInterestRateChangePeriodPassed(
-                _lastInterestRateAdjTime,
-                individualDelegate.minInterestRateChangePeriod
-            );
-        }
-    }
-
-    function _requireIsNotInBatch(uint256 _troveId) internal view {
-        if (interestBatchManagerOf[_troveId] != address(0)) {
-            revert TroveInBatch();
-        }
-    }
-
-    function _requireIsInBatch(
-        uint256 _troveId
-    ) internal view returns (address) {
-        address batchManager = interestBatchManagerOf[_troveId];
-        if (batchManager == address(0)) {
-            revert TroveNotInBatch();
-        }
-
-        return batchManager;
     }
 
     function _requireTroveDoesNotExist(
@@ -1681,8 +796,7 @@ contract BorrowerOperations is
 
     function _requireValidAdjustmentInCurrentMode(
         TroveChange memory _troveChange,
-        LocalVariables_adjustTrove memory _vars,
-        bool _isTroveInBatch
+        LocalVariables_adjustTrove memory _vars
     ) internal view {
         /*
          * Below Critical Threshold, it is not permitted:
@@ -1695,14 +809,10 @@ contract BorrowerOperations is
          * - The adjustment won't pull the TCR below CCR
          *
          * In Both cases:
-         * - The new ICR is above MCR, or MCR+BCR if a batched trove
+         * - The new ICR is above MCR
          */
 
-        if (_isTroveInBatch) {
-            _requireICRisAboveMCRPlusBCR(_vars.newICR);
-        } else {
-            _requireICRisAboveMCR(_vars.newICR);
-        }
+        _requireICRisAboveMCR(_vars.newICR);
 
         uint256 newTCR = _getNewTCRFromTroveChange(_troveChange, _vars.price);
         if (_vars.isBelowCriticalThreshold) {
@@ -1720,12 +830,6 @@ contract BorrowerOperations is
     function _requireICRisAboveMCR(uint256 _newICR) internal view {
         if (_newICR < MCR) {
             revert ICRBelowMCR();
-        }
-    }
-
-    function _requireICRisAboveMCRPlusBCR(uint256 _newICR) internal view {
-        if (_newICR < MCR + BCR) {
-            revert ICRBelowMCRPlusBCR();
         }
     }
 
@@ -1792,35 +896,11 @@ contract BorrowerOperations is
         }
     }
 
-    function _requireAnnualInterestRateIsNew(
-        uint256 _oldAnnualInterestRate,
-        uint256 _newAnnualInterestRate
-    ) internal pure {
-        if (_oldAnnualInterestRate == _newAnnualInterestRate) {
-            revert InterestRateNotNew();
-        }
-    }
-
     function _requireOrderedRange(
         uint256 _minInterestRate,
         uint256 _maxInterestRate
     ) internal pure {
         if (_minInterestRate >= _maxInterestRate) revert MinGeMax();
-    }
-
-    function _requireInterestRateInBatchManagerRange(
-        address _interestBatchManagerAddress,
-        uint256 _annualInterestRate
-    ) internal view {
-        InterestBatchManager
-            memory interestBatchManager = interestBatchManagers[
-                _interestBatchManagerAddress
-            ];
-        _requireInterestRateInRange(
-            _annualInterestRate,
-            interestBatchManager.minInterestRate,
-            interestBatchManager.maxInterestRate
-        );
     }
 
     function _requireInterestRateInRange(
@@ -1833,66 +913,6 @@ contract BorrowerOperations is
             _annualInterestRate > _maxInterestRate
         ) {
             revert InterestNotInRange();
-        }
-    }
-
-    function _requireBatchInterestRateChangePeriodPassed(
-        address _interestBatchManagerAddress,
-        uint256 _lastInterestRateAdjTime
-    ) internal view {
-        InterestBatchManager
-            memory interestBatchManager = interestBatchManagers[
-                _interestBatchManagerAddress
-            ];
-        if (
-            block.timestamp <
-            _lastInterestRateAdjTime +
-                uint256(interestBatchManager.minInterestRateChangePeriod)
-        ) {
-            revert BatchInterestRateChangePeriodNotPassed();
-        }
-    }
-
-    function _requireDelegateInterestRateChangePeriodPassed(
-        uint256 _lastInterestRateAdjTime,
-        uint256 _minInterestRateChangePeriod
-    ) internal view {
-        if (
-            block.timestamp <
-            _lastInterestRateAdjTime + _minInterestRateChangePeriod
-        ) {
-            revert DelegateInterestRateChangePeriodNotPassed();
-        }
-    }
-
-    function _requireValidInterestBatchManager(
-        address _interestBatchManagerAddress
-    ) internal view {
-        if (
-            interestBatchManagers[_interestBatchManagerAddress]
-                .maxInterestRate == 0
-        ) {
-            revert InvalidInterestBatchManager();
-        }
-    }
-
-    function _requireNonExistentInterestBatchManager(
-        address _interestBatchManagerAddress
-    ) internal view {
-        if (
-            interestBatchManagers[_interestBatchManagerAddress]
-                .maxInterestRate > 0
-        ) {
-            revert BatchManagerExists();
-        }
-    }
-
-    function _requireNewInterestBatchManager(
-        address _oldBatchManagerAddress,
-        address _newBatchManagerAddress
-    ) internal pure {
-        if (_oldBatchManagerAddress == _newBatchManagerAddress) {
-            revert BatchManagerNotNew();
         }
     }
 
