@@ -27,6 +27,7 @@ contract CollateralConfig is
     // Constants
     uint256 private constant DECIMAL_PRECISION = 1e18;
     uint256 private constant MAX_COLL_ANNUAL_INTEREST_RATE = 1e18; // 100%
+    uint256 private constant MAX_BORROW_RATIO = 1e17; // 10% max borrow fee
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -56,10 +57,11 @@ contract CollateralConfig is
             isFrozen: false,
             isPaused: false,
             annualInterestRate: 0,
-            treasury: _treasury
+            treasury: _treasury,
+            borrowRatio: 1e16 // 1%
         });
 
-        emit ConfigUpdated(false, false, 0, _treasury);
+        emit ConfigUpdated(false, false, 0, _treasury, 1e16);
     }
 
     function _authorizeUpgrade(
@@ -75,21 +77,25 @@ contract CollateralConfig is
         bool _isFrozen,
         bool _isPaused,
         uint256 _annualInterestRate,
-        address _treasury
+        address _treasury,
+        uint256 _borrowRatio
     ) external override onlyOwner {
         _requireValidAddress(_treasury);
         _requireValidInterestRate(_annualInterestRate);
+        _requireValidBorrowRatio(_borrowRatio);
 
         config.isFrozen = _isFrozen;
         config.isPaused = _isPaused;
         config.annualInterestRate = _annualInterestRate;
         config.treasury = _treasury;
+        config.borrowRatio = _borrowRatio;
 
         emit ConfigUpdated(
             _isFrozen,
             _isPaused,
             _annualInterestRate,
-            _treasury
+            _treasury,
+            _borrowRatio
         );
     }
 
@@ -136,6 +142,16 @@ contract CollateralConfig is
         emit TreasuryUpdated(_treasury);
     }
 
+    /**
+     * @notice Update borrow fee ratio
+     * @param _ratio Borrow fee ratio in 18 decimals (e.g., 5e15 = 0.5%)
+     */
+    function setBorrowRatio(uint256 _ratio) external override onlyOwner {
+        _requireValidBorrowRatio(_ratio);
+        config.borrowRatio = _ratio;
+        emit BorrowRatioUpdated(_ratio);
+    }
+
     // --- Getter Functions (View) ---
 
     function getConfig() external view override returns (Config memory) {
@@ -156,6 +172,10 @@ contract CollateralConfig is
 
     function getTreasury() external view override returns (address) {
         return config.treasury;
+    }
+
+    function getBorrowRatio() external view override returns (uint256) {
+        return config.borrowRatio;
     }
 
     // --- Check Functions ---
@@ -189,6 +209,13 @@ contract CollateralConfig is
         // Max 100% annual rate (1e18 = 100%)
         if (_rate > MAX_COLL_ANNUAL_INTEREST_RATE) {
             revert InvalidInterestRate();
+        }
+    }
+
+    function _requireValidBorrowRatio(uint256 _ratio) internal pure {
+        // Max 10% borrow fee (1e17 = 10%)
+        if (_ratio > MAX_BORROW_RATIO) {
+            revert InvalidBorrowRatio();
         }
     }
 }

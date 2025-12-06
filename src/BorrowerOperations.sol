@@ -267,8 +267,20 @@ contract BorrowerOperations is
         // Pull coll tokens from sender and move them to the Active Pool
         _pullCollAndSendToActivePool(vars.activePool, _collAmount);
 
-        // Mint the requested _usdxAmount to the borrower and mint the gas comp to the GasPool
-        vars.usdxToken.mint(msg.sender, _usdxAmount);
+        // Calculate borrow fee and mint tokens
+        uint256 borrowRatio = collateralConfig.getBorrowRatio();
+        uint256 borrowFee = 0;
+        address treasury = collateralConfig.getTreasury();
+        if (borrowRatio > 0 && treasury != address(0)) {
+            borrowFee = (_usdxAmount * borrowRatio) / DECIMAL_PRECISION;
+            // Mint fee to treasury
+            if (borrowFee > 0) {
+                vars.usdxToken.mint(treasury, borrowFee);
+            }
+        }
+
+        // Mint the requested _usdxAmount (minus fee) to the borrower and mint the gas comp to the GasPool
+        vars.usdxToken.mint(msg.sender, _usdxAmount - borrowFee);
         WETH.transferFrom(msg.sender, gasPoolAddress, ETH_GAS_COMPENSATION);
 
         return vars.troveId;
@@ -690,7 +702,24 @@ contract BorrowerOperations is
         IActivePool _activePool
     ) internal {
         if (_troveChange.debtIncrease > 0) {
-            _usdxToken.mint(withdrawalReceiver, _troveChange.debtIncrease);
+            // Calculate borrow fee for debt increase
+            uint256 borrowRatio = collateralConfig.getBorrowRatio();
+            uint256 borrowFee = 0;
+            address treasury = collateralConfig.getTreasury();
+            if (borrowRatio > 0 && treasury != address(0)) {
+                borrowFee =
+                    (_troveChange.debtIncrease * borrowRatio) /
+                    DECIMAL_PRECISION;
+                // Mint fee to treasury
+                if (borrowFee > 0) {
+                    _usdxToken.mint(treasury, borrowFee);
+                }
+            }
+            // Mint the debt increase (minus fee) to the withdrawal receiver
+            _usdxToken.mint(
+                withdrawalReceiver,
+                _troveChange.debtIncrease - borrowFee
+            );
         } else if (_troveChange.debtDecrease > 0) {
             _usdxToken.burn(msg.sender, _troveChange.debtDecrease);
         }

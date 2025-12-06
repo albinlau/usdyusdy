@@ -10,6 +10,7 @@ interface ICollateralConfig {
         bool isPaused; // Pause all operations except close
         uint256 annualInterestRate; // Annual collateral interest rate (18 decimals)
         address treasury; // Treasury address for protocol revenue
+        uint256 borrowRatio; // Borrow fee ratio (18 decimals, e.g., 5e15 = 0.5%)
     }
 
     // --- Events ---
@@ -18,19 +19,22 @@ interface ICollateralConfig {
         bool isFrozen,
         bool isPaused,
         uint256 annualInterestRate,
-        address treasury
+        address treasury,
+        uint256 borrowRatio
     );
 
     event Frozen(bool frozen);
     event Paused(bool paused);
     event AnnualInterestRateUpdated(uint256 newRate);
     event TreasuryUpdated(address newTreasury);
+    event BorrowRatioUpdated(uint256 newRatio);
     event MintInterestFailed(uint256 oldRate, uint256 newRate);
 
     // --- Errors ---
 
     error InvalidAddress();
     error InvalidInterestRate();
+    error InvalidBorrowRatio();
     error CollateralPaused();
     error CollateralFrozen();
 
@@ -43,7 +47,8 @@ interface ICollateralConfig {
         bool _isFrozen,
         bool _isPaused,
         uint256 _annualInterestRate,
-        address _treasury
+        address _treasury,
+        uint256 _borrowRatio
     ) external;
 
     /**
@@ -67,6 +72,12 @@ interface ICollateralConfig {
      */
     function setTreasury(address _treasury) external;
 
+    /**
+     * @notice Update borrow fee ratio
+     * @param _ratio Borrow fee ratio in 18 decimals (e.g., 5e15 = 0.5%)
+     */
+    function setBorrowRatio(uint256 _ratio) external;
+
     // --- Getter Functions ---
 
     function getConfig() external view returns (Config memory);
@@ -78,6 +89,8 @@ interface ICollateralConfig {
     function getAnnualInterestRate() external view returns (uint256);
 
     function getTreasury() external view returns (address);
+
+    function getBorrowRatio() external view returns (uint256);
 
     // --- Check Functions ---
 
