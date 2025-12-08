@@ -2,12 +2,16 @@
 
 pragma solidity 0.8.28;
 
+import "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
+
 import "../Interfaces/IMainnetPriceFeed.sol";
 import "../BorrowerOperations.sol";
 
 // import "forge-std/console2.sol";
 
-abstract contract MainnetPriceFeedBase is IMainnetPriceFeed {
+abstract contract MainnetPriceFeedBase is Initializable, OwnableUpgradeable, UUPSUpgradeable, IMainnetPriceFeed  {
     // Determines where the PriceFeed sources data from. Possible states:
     // - primary: Uses the primary price calculation, which depends on the specific feed
     // - lastGoodPrice: the last good price recorded by this PriceFeed.
@@ -24,7 +28,10 @@ abstract contract MainnetPriceFeedBase is IMainnetPriceFeed {
 
     IBorrowerOperations borrowerOperations;
 
-    constructor(uint256 _xocUsdStalenessThreshold, address _borrowOperationsAddress) {
+    function __MainnetPriceFeedBase_init(
+        uint256 _xocUsdStalenessThreshold,
+        address _borrowOperationsAddress
+    ) internal onlyInitializing {
         stalenessThreshold = _xocUsdStalenessThreshold;
         borrowerOperations = IBorrowerOperations(_borrowOperationsAddress);
     }

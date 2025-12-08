@@ -51,10 +51,14 @@ contract TroveManager is
     // the protocol triggers the shutdown of the borrow market and permanently disables all borrowing operations except for closing Troves.
     uint256 internal immutable SCR;
 
+    // Liquidation penalty for troves liquidator
+    uint256 public liquidationPenaltyLiquidator;
     // Liquidation penalty for troves offset to the SP
-    uint256 internal immutable LIQUIDATION_PENALTY_SP;
-    // Liquidation penalty for troves redistributed
-    uint256 internal immutable LIQUIDATION_PENALTY_REDISTRIBUTION;
+    uint256 public liquidationPenaltySp;
+    // Liquidation penalty for troves dao
+    uint256 public liquidationPenaltyDao;
+    // Address of Liquidation dao penalty recipient address
+    address public liquidationPenaltyDaoRecipient;
 
     // --- Data structures ---
 
@@ -123,6 +127,7 @@ contract TroveManager is
         uint256 collToSendToSP;
         uint256 debtToRedistribute;
         uint256 collToRedistribute;
+        uint256 collToDao;
         uint256 collSurplus;
         uint256 ETHGasCompensation;
     }
@@ -170,6 +175,10 @@ contract TroveManager is
     event CollSurplusPoolAddressChanged(address _collSurplusPoolAddress);
     event SortedTrovesAddressChanged(address _sortedTrovesAddress);
     event CollateralRegistryAddressChanged(address _collateralRegistryAddress);
+    event LiquidationPenaltyLiquidatorChanged(uint256 _liquidationPenaltyLiquidator);
+    event LiquidationPenaltySpChanged(uint256 _liquidationPenaltySp);
+    event LiquidationPenaltyDaoChanged(uint256 _liquidationPenaltyDao);
+    event LiquidationPenaltyDaoRecipientChanged(address _liquidationPenaltyDaoRecipient);
 
     constructor(
         IAddressesRegistry _addressesRegistry
@@ -179,9 +188,6 @@ contract TroveManager is
         CCR = _addressesRegistry.CCR();
         MCR = _addressesRegistry.MCR();
         SCR = _addressesRegistry.SCR();
-        LIQUIDATION_PENALTY_SP = _addressesRegistry.LIQUIDATION_PENALTY_SP();
-        LIQUIDATION_PENALTY_REDISTRIBUTION = _addressesRegistry
-            .LIQUIDATION_PENALTY_REDISTRIBUTION();
 
         WETH = _addressesRegistry.WETH();
     }
@@ -203,6 +209,12 @@ contract TroveManager is
         collateralRegistry = _addressesRegistry.collateralRegistry();
         collateralConfig = _addressesRegistry.collateralConfig();
 
+        liquidationPenaltySp = _addressesRegistry.liquidationPenaltySp();
+        liquidationPenaltyLiquidator = _addressesRegistry
+            .liquidationPenaltyLiquidator();
+        liquidationPenaltyDao = _addressesRegistry.liquidationPenaltyDao();
+        liquidationPenaltyDaoRecipient = _addressesRegistry.liquidationPenaltyDaoRecipient();
+
         emit TroveNFTAddressChanged(address(troveNFT));
         emit BorrowerOperationsAddressChanged(address(borrowerOperations));
         emit StabilityPoolAddressChanged(address(stabilityPool));
@@ -211,6 +223,10 @@ contract TroveManager is
         emit USDXTokenAddressChanged(address(usdxToken));
         emit SortedTrovesAddressChanged(address(sortedTroves));
         emit CollateralRegistryAddressChanged(address(collateralRegistry));
+        emit LiquidationPenaltyLiquidatorChanged(liquidationPenaltyLiquidator);
+        emit LiquidationPenaltySpChanged(liquidationPenaltySp);
+        emit LiquidationPenaltyDaoChanged(liquidationPenaltyDao);
+        emit LiquidationPenaltyDaoRecipientChanged(liquidationPenaltyDaoRecipient);
     }
 
     function _authorizeUpgrade(
@@ -258,6 +274,7 @@ contract TroveManager is
             singleLiquidation.collGasCompensation,
             singleLiquidation.debtToRedistribute,
             singleLiquidation.collToRedistribute,
+            singleLiquidation.collToDao,
             singleLiquidation.collSurplus
         ) = _getOffsetAndRedistributionVals(
             trove.entireDebt,
@@ -308,11 +325,11 @@ contract TroveManager is
     // Return the amount of Coll to be drawn from a trove's collateral and sent as gas compensation.
     function _getCollGasCompensation(
         uint256 _coll
-    ) internal pure returns (uint256) {
+    ) internal view returns (uint256) {
         // _entireDebt should never be zero, but we add the condition defensively to avoid an unexpected revert
         return
             LiquityMath._min(
-                _coll / COLL_GAS_COMPENSATION_DIVISOR,
+                _coll * liquidationPenaltyLiquidator / DECIMAL_PRECISION,
                 COLL_GAS_COMPENSATION_CAP
             );
     }
@@ -334,6 +351,7 @@ contract TroveManager is
             uint256 collGasCompensation,
             uint256 debtToRedistribute,
             uint256 collToRedistribute,
+            uint256 collToDao,
             uint256 collSurplus
         )
     {
@@ -358,12 +376,11 @@ contract TroveManager is
                 _entireTroveDebt;
 
             collGasCompensation = _getCollGasCompensation(collSPPortion);
-            uint256 collToOffset = collSPPortion - collGasCompensation;
 
             (collToSendToSP, collSurplus) = _getCollPenaltyAndSurplus(
-                collToOffset,
+                collSPPortion,
                 debtToOffset,
-                LIQUIDATION_PENALTY_SP,
+                liquidationPenaltySp,
                 _price
             );
         }
@@ -377,10 +394,19 @@ contract TroveManager is
                 (collToRedistribute, collSurplus) = _getCollPenaltyAndSurplus(
                     collRedistributionPortion + collSurplus, // Coll surplus from offset can be eaten up by red. penalty
                     debtToRedistribute,
-                    LIQUIDATION_PENALTY_REDISTRIBUTION, // _penaltyRatio
+                    liquidationPenaltyLiquidator + liquidationPenaltySp, // _penaltyRatio
                     _price
                 );
             }
+        }
+
+        if (collSurplus > 0) {
+            uint256 collToDaoNeed = _entireTroveDebt * liquidationPenaltyDao / _price;
+            collToDao = LiquityMath._min(
+                collToDaoNeed,
+                collSurplus
+            );
+            collSurplus = collSurplus - collToDao;
         }
         // assert(_collToLiquidate == collToSendToSP + collToRedistribute + collSurplus);
     }
@@ -467,6 +493,13 @@ contract TroveManager is
             );
         }
 
+        if (totals.collToDao > 0) {
+            activePoolCached.sendColl(
+                liquidationPenaltyDaoRecipient,
+                totals.collToDao
+            );
+        }
+
         // Update system snapshots
         _updateSystemSnapshots_excludeCollRemainder(
             activePoolCached,
@@ -480,6 +513,7 @@ contract TroveManager is
             totals.collGasCompensation,
             totals.collToSendToSP,
             totals.collToRedistribute,
+            totals.collToDao,
             totals.collSurplus,
             L_coll,
             L_usdxDebt,
@@ -561,6 +595,7 @@ contract TroveManager is
         totals.collToSendToSP += _singleLiquidation.collToSendToSP;
         totals.debtToRedistribute += _singleLiquidation.debtToRedistribute;
         totals.collToRedistribute += _singleLiquidation.collToRedistribute;
+        totals.collToDao += _singleLiquidation.collToDao;
         totals.collSurplus += _singleLiquidation.collSurplus;
     }
 
@@ -1427,5 +1462,125 @@ contract TroveManager is
             _collChangeFromOperation: int256(_troveChange.collIncrease) -
                 int256(_troveChange.collDecrease)
         });
+    }
+
+    // ============ Liquidation Penalty Update Functions ============
+
+    /**
+    * @dev Updates the liquidation penalty percentage for the liquidator
+    * @param _newLiquidationPenaltyLiquidator New liquidation penalty percentage for liquidator (in 1e18 precision)
+    */
+    function updateLiquidationPenaltyLiquidator(uint256 _newLiquidationPenaltyLiquidator) external onlyOwner {
+        // Validate the new penalty value
+        require(
+            _newLiquidationPenaltyLiquidator <= DECIMAL_PRECISION,
+            "TroveManager: Liquidator penalty cannot exceed 100%"
+        );
+
+        liquidationPenaltyLiquidator = _newLiquidationPenaltyLiquidator;
+
+        emit LiquidationPenaltyLiquidatorChanged(_newLiquidationPenaltyLiquidator);
+    }
+
+    /**
+    * @dev Updates the liquidation penalty percentage for the Stability Pool
+    * @param _newLiquidationPenaltySp New liquidation penalty percentage for Stability Pool (in 1e18 precision)
+    */
+    function updateLiquidationPenaltySp(uint256 _newLiquidationPenaltySp) external onlyOwner {
+        // Validate the new penalty value
+        require(
+            _newLiquidationPenaltySp <= DECIMAL_PRECISION,
+            "TroveManager: SP penalty cannot exceed 100%"
+        );
+
+        liquidationPenaltySp = _newLiquidationPenaltySp;
+
+        emit LiquidationPenaltySpChanged(_newLiquidationPenaltySp);
+    }
+
+    /**
+    * @dev Updates the liquidation penalty percentage for the DAO
+    * @param _newLiquidationPenaltyDao New liquidation penalty percentage for DAO (in 1e18 precision)
+    */
+    function updateLiquidationPenaltyDao(uint256 _newLiquidationPenaltyDao) external onlyOwner {
+        // Validate the new penalty value
+        require(
+            _newLiquidationPenaltyDao <= DECIMAL_PRECISION,
+            "TroveManager: DAO penalty cannot exceed 100%"
+        );
+
+        liquidationPenaltyDao = _newLiquidationPenaltyDao;
+
+        emit LiquidationPenaltyDaoChanged(_newLiquidationPenaltyDao);
+    }
+
+    /**
+    * @dev Updates the DAO penalty recipient address
+    * @param _newLiquidationPenaltyDaoRecipient New address to receive DAO liquidation penalties
+    */
+    function updateLiquidationPenaltyDaoRecipient(address _newLiquidationPenaltyDaoRecipient) external onlyOwner {
+        // Validate the new address
+        require(
+            _newLiquidationPenaltyDaoRecipient != address(0),
+            "TroveManager: DAO recipient cannot be zero address"
+        );
+
+        liquidationPenaltyDaoRecipient = _newLiquidationPenaltyDaoRecipient;
+
+        emit LiquidationPenaltyDaoRecipientChanged(_newLiquidationPenaltyDaoRecipient);
+    }
+
+    // ============ Batch Update Function ============
+
+    /**
+    * @dev Updates multiple liquidation penalty parameters in a single transaction
+    * @param _newLiquidationPenaltyLiquidator New liquidator penalty percentage
+    * @param _newLiquidationPenaltySp New Stability Pool penalty percentage
+    * @param _newLiquidationPenaltyDao New DAO penalty percentage
+    * @param _newLiquidationPenaltyDaoRecipient New DAO penalty recipient address
+    */
+    function updateLiquidationParameters(
+        uint256 _newLiquidationPenaltyLiquidator,
+        uint256 _newLiquidationPenaltySp,
+        uint256 _newLiquidationPenaltyDao,
+        address _newLiquidationPenaltyDaoRecipient
+    ) external onlyOwner {
+        // Validate all parameters
+        require(
+            _newLiquidationPenaltyLiquidator <= DECIMAL_PRECISION &&
+            _newLiquidationPenaltySp <= DECIMAL_PRECISION &&
+            _newLiquidationPenaltyDao <= DECIMAL_PRECISION,
+            "TroveManager: Penalty cannot exceed 100%"
+        );
+        require(
+            _newLiquidationPenaltyDaoRecipient != address(0),
+            "TroveManager: DAO recipient cannot be zero address"
+        );
+
+        // Store old values for events
+        uint256 oldPenaltyLiquidator = liquidationPenaltyLiquidator;
+        uint256 oldPenaltySp = liquidationPenaltySp;
+        uint256 oldPenaltyDao = liquidationPenaltyDao;
+        address oldRecipient = liquidationPenaltyDaoRecipient;
+
+        // Update values
+        liquidationPenaltyLiquidator = _newLiquidationPenaltyLiquidator;
+        liquidationPenaltySp = _newLiquidationPenaltySp;
+        liquidationPenaltyDao = _newLiquidationPenaltyDao;
+        liquidationPenaltyDaoRecipient = _newLiquidationPenaltyDaoRecipient;
+
+        // Emit events
+        if (oldPenaltyLiquidator != _newLiquidationPenaltyLiquidator) {
+            emit LiquidationPenaltyLiquidatorChanged(_newLiquidationPenaltyLiquidator);
+        }
+        if (oldPenaltySp != _newLiquidationPenaltySp) {
+            emit LiquidationPenaltySpChanged(_newLiquidationPenaltySp);
+        }
+        if (oldPenaltyDao != _newLiquidationPenaltyDao) {
+            emit LiquidationPenaltyDaoChanged(_newLiquidationPenaltyDao);
+        }
+        if (oldRecipient != _newLiquidationPenaltyDaoRecipient) {
+            emit LiquidationPenaltyDaoRecipientChanged(_newLiquidationPenaltyDaoRecipient);
+        }
     }
 }

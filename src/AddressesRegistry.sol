@@ -43,10 +43,14 @@ contract AddressesRegistry is
 
     // Minimum collateral ratio for individual troves
     uint256 public immutable MCR;
+    // Liquidation penalty for troves liquidator
+    uint256 public liquidationPenaltyLiquidator;
     // Liquidation penalty for troves offset to the SP
-    uint256 public immutable LIQUIDATION_PENALTY_SP;
-    // Liquidation penalty for troves redistributed
-    uint256 public immutable LIQUIDATION_PENALTY_REDISTRIBUTION;
+    uint256 public liquidationPenaltySp;
+    // Liquidation penalty for troves dao
+    uint256 public liquidationPenaltyDao;
+    // Address of Liquidation dao penalty recipient address
+    address public liquidationPenaltyDaoRecipient;
 
     error InvalidCCR();
     error InvalidMCR();
@@ -75,34 +79,26 @@ contract AddressesRegistry is
     event USDXTokenAddressChanged(address _usdxTokenAddress);
     event WETHAddressChanged(address _wethAddress);
     event CollateralConfigAddressChanged(address _collateralConfigAddress);
+    event LiquidationPenaltyLiquidatorChanged(uint256 _liquidationPenaltyLiquidator);
+    event LiquidationPenaltySpChanged(uint256 _liquidationPenaltySp);
+    event LiquidationPenaltyDaoChanged(uint256 _liquidationPenaltyDao);
+    event LiquidationPenaltyDaoRecipientChanged(address _liquidationPenaltyDaoRecipient);
 
     constructor(
         uint256 _ccr,
         uint256 _mcr,
         uint256 _bcr,
-        uint256 _scr,
-        uint256 _liquidationPenaltySP,
-        uint256 _liquidationPenaltyRedistribution
+        uint256 _scr
     ) {
         _disableInitializers();
         if (_ccr <= 1e18 || _ccr >= 2e18) revert InvalidCCR();
         if (_mcr <= 1e18 || _mcr >= 2e18) revert InvalidMCR();
         if (_bcr < 5e16 || _bcr >= 50e16) revert InvalidBCR();
         if (_scr <= 1e18 || _scr >= 2e18) revert InvalidSCR();
-        if (_liquidationPenaltySP < MIN_LIQUIDATION_PENALTY_SP)
-            revert SPPenaltyTooLow();
-        if (_liquidationPenaltySP > _liquidationPenaltyRedistribution)
-            revert SPPenaltyGtRedist();
-        if (
-            _liquidationPenaltyRedistribution >
-            MAX_LIQUIDATION_PENALTY_REDISTRIBUTION
-        ) revert RedistPenaltyTooHigh();
 
         CCR = _ccr;
         SCR = _scr;
         MCR = _mcr;
-        LIQUIDATION_PENALTY_SP = _liquidationPenaltySP;
-        LIQUIDATION_PENALTY_REDISTRIBUTION = _liquidationPenaltyRedistribution;
     }
 
     function initialize(address initialOwner) public initializer {
@@ -134,6 +130,10 @@ contract AddressesRegistry is
         usdxToken = _vars.usdxToken;
         WETH = _vars.WETH;
         collateralConfig = _vars.collateralConfig;
+        liquidationPenaltyLiquidator = _vars.liquidationPenaltyLiquidator;
+        liquidationPenaltySp = _vars.liquidationPenaltySp;
+        liquidationPenaltyDao = _vars.liquidationPenaltyDao;
+        liquidationPenaltyDaoRecipient = _vars.liquidationPenaltyDaoRecipient;
 
         emit CollTokenAddressChanged(address(_vars.collToken));
         emit BorrowerOperationsAddressChanged(
@@ -158,5 +158,9 @@ contract AddressesRegistry is
         emit USDXTokenAddressChanged(address(_vars.usdxToken));
         emit WETHAddressChanged(address(_vars.WETH));
         emit CollateralConfigAddressChanged(address(_vars.collateralConfig));
+        emit LiquidationPenaltyLiquidatorChanged(_vars.liquidationPenaltyLiquidator);
+        emit LiquidationPenaltySpChanged(_vars.liquidationPenaltySp);
+        emit LiquidationPenaltyDaoChanged(_vars.liquidationPenaltyDao);
+        emit LiquidationPenaltyDaoRecipientChanged(_vars.liquidationPenaltyDaoRecipient);
     }
 }

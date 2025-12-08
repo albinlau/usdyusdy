@@ -40,6 +40,11 @@ interface IAddressesRegistry {
         IUSDXToken usdxToken;
         IWETH WETH;
         ICollateralConfig collateralConfig;
+        address daoAddress;
+        uint256 liquidationPenaltyLiquidator;
+        uint256 liquidationPenaltySp;
+        uint256 liquidationPenaltyDao;
+        address liquidationPenaltyDaoRecipient;
     }
 
     function CCR() external returns (uint256);
@@ -48,9 +53,13 @@ interface IAddressesRegistry {
 
     function MCR() external returns (uint256);
 
-    function LIQUIDATION_PENALTY_SP() external returns (uint256);
+    function liquidationPenaltySp() external returns (uint256);
 
-    function LIQUIDATION_PENALTY_REDISTRIBUTION() external returns (uint256);
+    function liquidationPenaltyLiquidator() external returns (uint256);
+
+    function liquidationPenaltyDao() external returns (uint256);
+
+    function liquidationPenaltyDaoRecipient() external returns (address);
 
     function collToken() external view returns (IERC20Metadata);
 

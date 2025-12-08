@@ -1,9 +1,14 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.28;
+
+import "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
+
 import "./MainnetPriceFeedBase.sol";
 
 // Custom price oracle core contract
-contract WXOCPriceFeed is MainnetPriceFeedBase {
+contract WXOCPriceFeed is Initializable, OwnableUpgradeable, UUPSUpgradeable, MainnetPriceFeedBase {
     // ============ State Variables ============
     // Price feeder whitelist (multi-sig/single-sig, supports updates)
     address public priceFeeder;
@@ -26,24 +31,35 @@ contract WXOCPriceFeed is MainnetPriceFeedBase {
     error UpdateTooFrequent();
 
     // ============ Constructor ============
-    constructor(
-        address _priceFeeder,          // Off-chain price feeder address (private key stored offline)
-        uint256 _signatureValidity,    // Signature validity period (e.g., 300 seconds)
-        uint256 _minUpdateInterval,    // Minimum update interval (e.g., 60 seconds)
-        uint256 _stalenessThreshold,   // Price staleness threshold (e.g., 1800 seconds)
-        address _borrowerOperationsAddress
-    ) MainnetPriceFeedBase(
-    _stalenessThreshold,
-    _borrowerOperationsAddress
-    ) {
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
+        address _priceFeeder,
+        uint256 _signatureValidity,
+        uint256 _minUpdateInterval,
+        uint256 _stalenessThreshold,
+        address _borrowerOperationsAddress,
+        uint256 _initialPrice,
+        address _initialOwner
+    ) public initializer {
+        __Ownable_init();
+        __MainnetPriceFeedBase_init(_stalenessThreshold, _borrowerOperationsAddress);
+
+        transferOwnership(_initialOwner);
+
         priceFeeder = _priceFeeder;
         signatureValidity = _signatureValidity;
         minUpdateInterval = _minUpdateInterval;
-        // Initialize price source as primary
         priceSource = PriceSource.primary;
-        // Initialize last feeding time as deployment time
         lastFeedTimestamp = block.timestamp;
+        lastGoodPrice = _initialPrice;
     }
+
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyOwner {}
 
     // ============ Off-chain Price Feeding Core Function (External Call) ============
     /**
