@@ -4,11 +4,15 @@ pragma solidity 0.8.28;
 import "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
 import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
 import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/utils/cryptography/ECDSAUpgradeable.sol";
 
 import "./MainnetPriceFeedBase.sol";
 
 // Custom price oracle core contract
 contract WXOCPriceFeed is Initializable, OwnableUpgradeable, UUPSUpgradeable, MainnetPriceFeedBase {
+
+    using ECDSAUpgradeable for bytes32;
+
     // ============ State Variables ============
     // Price feeder whitelist (multi-sig/single-sig, supports updates)
     address public priceFeeder;
@@ -47,7 +51,7 @@ contract WXOCPriceFeed is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ma
         __Ownable_init();
         __MainnetPriceFeedBase_init(_stalenessThreshold, _borrowerOperationsAddress);
 
-        transferOwnership(_initialOwner);
+        transferOwnership(msg.sender);
 
         priceFeeder = _priceFeeder;
         signatureValidity = _signatureValidity;
@@ -66,28 +70,26 @@ contract WXOCPriceFeed is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ma
      * @dev Called by off-chain price feeder to update price (requires signature verification)
      * @param _price Price to feed (18 decimal places)
      * @param _timestamp Timestamp when off-chain signature was created (prevents replay)
-     * @param _v Signature v component
-     * @param _r Signature r component
-     * @param _s Signature s component
+     * @param _signature Signature by underchain price feed
      */
     function updatePrice(
         uint256 _price,
         uint256 _timestamp,
-        uint8 _v,
-        bytes32 _r,
-        bytes32 _s
+        bytes memory _signature
     ) external {
         // 1. Verify caller is the price feeder (optional: any address can call, only signature is verified)
         if (msg.sender != priceFeeder) revert FeederNotAuthorized();
         // 2. Verify update frequency (prevents high-frequency manipulation)
         if (block.timestamp - lastFeedTimestamp < minUpdateInterval) revert UpdateTooFrequent();
         // 3. Verify signature validity period
-        if (block.timestamp - _timestamp > signatureValidity) revert SignatureExpired();
+        if (block.timestamp > _timestamp + signatureValidity) revert SignatureExpired();
         // 4. Verify signature authenticity
-        bytes32 messageHash = keccak256(abi.encodePacked(_price, _timestamp, address(this)));
-        bytes32 ethSignedMessageHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
-        address signer = ecrecover(ethSignedMessageHash, _v, _r, _s);
-        if (signer != priceFeeder || signer == address(0)) revert InvalidSignature();
+        bytes32 messageHash = keccak256(abi.encode(_price, _timestamp));
+        bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
+        address recoveredSigner = ethSignedMessageHash.recover(_signature);
+        if (recoveredSigner != priceFeeder || recoveredSigner == address(0)) {
+            revert InvalidSignature();
+        }
         // 5. Verify price rationality (optional: prevents feeding errors, such as zero/abnormal values)
         if (_price == 0 || _price > 1e24) revert PriceOutOfRange(); // Example: price cap 1e6 USDT (1e24 = 1e6 * 1e18)
 
