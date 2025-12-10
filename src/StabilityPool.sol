@@ -131,8 +131,8 @@ contract StabilityPool is
     string public constant NAME = "StabilityPool";
 
     IERC20 public immutable collToken;
-    ITroveManager public immutable troveManager;
-    IUSDXToken public immutable usdxToken;
+    ITroveManager public troveManager;
+    IUSDXToken public usdxToken;
 
     uint256 internal collBalance; // deposited coll tracker
 
@@ -201,19 +201,38 @@ contract StabilityPool is
 
     constructor(
         IAddressesRegistry _addressesRegistry
-    ) LiquityBase(_addressesRegistry) {
+    ) {
         _disableInitializers();
 
         collToken = _addressesRegistry.collToken();
-        troveManager = _addressesRegistry.troveManager();
-        usdxToken = _addressesRegistry.usdxToken();
     }
 
-    function initialize(address initialOwner) public initializer {
+    function initialize(address initialOwner, IAddressesRegistry _addressesRegistry) public initializer {
         __Ownable_init();
+        __LiquityBase_init(_addressesRegistry);
         transferOwnership(initialOwner);
 
         P = P_PRECISION;
+
+        troveManager = _addressesRegistry.troveManager();
+        usdxToken = _addressesRegistry.usdxToken();
+        emit TroveManagerAddressChanged(address(troveManager));
+        emit USDXTokenAddressChanged(address(usdxToken));
+    }
+
+    function updateByAddressRegistry(
+        IAddressesRegistry _addressesRegistry
+    ) external onlyOwner {
+        activePool = _addressesRegistry.activePool();
+        defaultPool = _addressesRegistry.defaultPool();
+        priceFeed = _addressesRegistry.priceFeed();
+
+        emit ActivePoolAddressChanged(address(activePool));
+        emit DefaultPoolAddressChanged(address(defaultPool));
+        emit PriceFeedAddressChanged(address(priceFeed));
+
+        troveManager = _addressesRegistry.troveManager();
+        usdxToken = _addressesRegistry.usdxToken();
 
         emit TroveManagerAddressChanged(address(troveManager));
         emit USDXTokenAddressChanged(address(usdxToken));

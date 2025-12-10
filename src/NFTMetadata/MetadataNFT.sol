@@ -29,10 +29,15 @@ interface IMetadataNFT {
 }
 
 contract MetadataNFT is IMetadataNFT {
-    FixedAssetReader public immutable assetReader;
+    // todo
+//    FixedAssetReader public immutable assetReader;
 
-    constructor(FixedAssetReader _assetReader) {
-        assetReader = _assetReader;
+    constructor(
+    // todo
+//        FixedAssetReader _assetReader
+    ) {
+        // todo
+//        assetReader = _assetReader;
     }
 
     function uri(
@@ -50,27 +55,30 @@ contract MetadataNFT is IMetadataNFT {
                     IERC20Metadata(_troveData._collToken).symbol(),
                     " to issue stablecoin tokens (USDX) to their own Ethereum address. The individual collateralized debt positions are called Troves, and are represented as NFTs."
                 ),
-                renderSVGImage(_troveData),
+        // todo
+//                renderSVGImage(_troveData),
+                "",
                 attr
             );
     }
 
-    function renderSVGImage(
-        TroveData memory _troveData
-    ) internal view returns (string memory) {
-        return
-            svg._svg(
-                baseSVG._svgProps(),
-                string.concat(
-                    baseSVG._baseElements(assetReader),
-                    bauhaus._bauhaus(
-                        IERC20Metadata(_troveData._collToken).symbol(),
-                        _troveData._tokenId
-                    ),
-                    dynamicTextComponents(_troveData)
-                )
-            );
-    }
+    // todo
+//    function renderSVGImage(
+//        TroveData memory _troveData
+//    ) internal view returns (string memory) {
+//        return
+//            svg._svg(
+//                baseSVG._svgProps(),
+//                string.concat(
+//                    baseSVG._baseElements(assetReader),
+//                    bauhaus._bauhaus(
+//                        IERC20Metadata(_troveData._collToken).symbol(),
+//                        _troveData._tokenId
+//                    ),
+//                    dynamicTextComponents(_troveData)
+//                )
+//            );
+//    }
 
     function attributes(
         TroveData memory _troveData
@@ -94,32 +102,33 @@ contract MetadataNFT is IMetadataNFT {
             );
     }
 
-    function dynamicTextComponents(
-        TroveData memory _troveData
-    ) public view returns (string memory) {
-        string memory id = LibString.toHexString(_troveData._tokenId);
-        id = string.concat(
-            LibString.slice(id, 0, 6),
-            "...",
-            LibString.slice(id, 38, 42)
-        );
-
-        return
-            string.concat(
-                baseSVG._formattedIdEl(id),
-                baseSVG._formattedAddressEl(_troveData._owner),
-                baseSVG._collLogo(
-                    IERC20Metadata(_troveData._collToken).symbol(),
-                    assetReader
-                ),
-                baseSVG._statusEl(_status2Str(_troveData._status)),
-                baseSVG._dynamicTextEls(
-                    _troveData._debtAmount,
-                    _troveData._collAmount,
-                    _troveData._interestRate
-                )
-            );
-    }
+    // todo
+//    function dynamicTextComponents(
+//        TroveData memory _troveData
+//    ) public view returns (string memory) {
+//        string memory id = LibString.toHexString(_troveData._tokenId);
+//        id = string.concat(
+//            LibString.slice(id, 0, 6),
+//            "...",
+//            LibString.slice(id, 38, 42)
+//        );
+//
+//        return
+//            string.concat(
+//                baseSVG._formattedIdEl(id),
+//                baseSVG._formattedAddressEl(_troveData._owner),
+//                baseSVG._collLogo(
+//                    IERC20Metadata(_troveData._collToken).symbol(),
+//                    assetReader
+//                ),
+//                baseSVG._statusEl(_status2Str(_troveData._status)),
+//                baseSVG._dynamicTextEls(
+//                    _troveData._debtAmount,
+//                    _troveData._collAmount,
+//                    _troveData._interestRate
+//                )
+//            );
+//    }
 
     function _status2Str(
         ITroveManager.Status status

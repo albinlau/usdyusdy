@@ -21,8 +21,8 @@ contract CollSurplusPool is
     string public constant NAME = "CollSurplusPool";
 
     IERC20 public immutable collToken;
-    address public immutable borrowerOperationsAddress;
-    address public immutable troveManagerAddress;
+    address public borrowerOperationsAddress;
+    address public troveManagerAddress;
 
     // deposited ether tracker
     uint256 internal collBalance;
@@ -55,6 +55,18 @@ contract CollSurplusPool is
     function initialize(address initialOwner) public initializer {
         __Ownable_init();
         transferOwnership(initialOwner);
+    }
+
+    function updateByAddressRegistry(
+        IAddressesRegistry _addressesRegistry
+    ) external onlyOwner {
+        borrowerOperationsAddress = address(
+            _addressesRegistry.borrowerOperations()
+        );
+        troveManagerAddress = address(_addressesRegistry.troveManager());
+
+        emit BorrowerOperationsAddressChanged(borrowerOperationsAddress);
+        emit TroveManagerAddressChanged(troveManagerAddress);
     }
 
     function _authorizeUpgrade(

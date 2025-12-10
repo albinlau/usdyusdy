@@ -19,8 +19,8 @@ import "./Interfaces/ITroveManager.sol";
  */
 contract GasPool is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     IWETH public immutable WETH;
-    address public immutable borrowerOperationsAddress;
-    address public immutable troveManagerAddress;
+    address public borrowerOperationsAddress;
+    address public troveManagerAddress;
 
     constructor(IAddressesRegistry _addressesRegistry) {
         _disableInitializers();
@@ -35,6 +35,20 @@ contract GasPool is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     function initialize(address initialOwner) public initializer {
         __Ownable_init();
         transferOwnership(initialOwner);
+        // Allow BorrowerOperations to refund gas compensation
+        WETH.approve(borrowerOperationsAddress, type(uint256).max);
+        // Allow TroveManager to pay gas compensation to liquidator
+        WETH.approve(troveManagerAddress, type(uint256).max);
+    }
+
+    function updateByAddressRegistry(
+        IAddressesRegistry _addressesRegistry
+    ) external onlyOwner {
+        borrowerOperationsAddress = address(
+            _addressesRegistry.borrowerOperations()
+        );
+        troveManagerAddress = address(_addressesRegistry.troveManager());
+
         // Allow BorrowerOperations to refund gas compensation
         WETH.approve(borrowerOperationsAddress, type(uint256).max);
         // Allow TroveManager to pay gas compensation to liquidator

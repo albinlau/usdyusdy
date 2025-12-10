@@ -5,9 +5,10 @@ pragma solidity 0.8.28;
 import "../Interfaces/IAddRemoveManagers.sol";
 import "../Interfaces/IAddressesRegistry.sol";
 import "../Interfaces/ITroveNFT.sol";
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
 
-contract AddRemoveManagers is IAddRemoveManagers {
-    ITroveNFT internal immutable troveNFT;
+contract AddRemoveManagers is Initializable, IAddRemoveManagers {
+    ITroveNFT internal troveNFT;
 
     struct RemoveManagerReceiver {
         address manager;
@@ -47,7 +48,9 @@ contract AddRemoveManagers is IAddRemoveManagers {
         address _newReceiver
     );
 
-    constructor(IAddressesRegistry _addressesRegistry) {
+    constructor() {}
+
+    function __AddRemoveManagers_init(IAddressesRegistry _addressesRegistry) internal onlyInitializing {
         troveNFT = _addressesRegistry.troveNFT();
         emit TroveNFTAddressChanged(address(troveNFT));
     }

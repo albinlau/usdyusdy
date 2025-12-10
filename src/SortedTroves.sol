@@ -54,8 +54,8 @@ contract SortedTroves is
     event TroveManagerAddressChanged(address _troveManagerAddress);
     event BorrowerOperationsAddressChanged(address _borrowerOperationsAddress);
 
-    address public immutable borrowerOperationsAddress;
-    ITroveManager public immutable troveManager;
+    address public borrowerOperationsAddress;
+    ITroveManager public troveManager;
 
     // Information for a node in the list
     struct Node {
@@ -95,6 +95,17 @@ contract SortedTroves is
         nodes[ROOT_NODE_ID].nextId = ROOT_NODE_ID;
         nodes[ROOT_NODE_ID].prevId = ROOT_NODE_ID;
 
+        emit TroveManagerAddressChanged(address(troveManager));
+        emit BorrowerOperationsAddressChanged(borrowerOperationsAddress);
+    }
+
+    function updateByAddressRegistry(
+        IAddressesRegistry _addressesRegistry
+    ) external onlyOwner {
+        troveManager = ITroveManager(_addressesRegistry.troveManager());
+        borrowerOperationsAddress = address(
+            _addressesRegistry.borrowerOperations()
+        );
         emit TroveManagerAddressChanged(address(troveManager));
         emit BorrowerOperationsAddressChanged(borrowerOperationsAddress);
     }

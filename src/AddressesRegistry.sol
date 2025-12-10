@@ -87,13 +87,11 @@ contract AddressesRegistry is
     constructor(
         uint256 _ccr,
         uint256 _mcr,
-        uint256 _bcr,
         uint256 _scr
     ) {
         _disableInitializers();
         if (_ccr <= 1e18 || _ccr >= 2e18) revert InvalidCCR();
         if (_mcr <= 1e18 || _mcr >= 2e18) revert InvalidMCR();
-        if (_bcr < 5e16 || _bcr >= 50e16) revert InvalidBCR();
         if (_scr <= 1e18 || _scr >= 2e18) revert InvalidSCR();
 
         CCR = _ccr;
@@ -101,9 +99,15 @@ contract AddressesRegistry is
         MCR = _mcr;
     }
 
-    function initialize(address initialOwner) public initializer {
+    function initialize(
+        address initialOwner,
+        IWETH _weth,
+        IERC20Metadata _collToken
+    ) public initializer {
         __Ownable_init();
         transferOwnership(initialOwner);
+        WETH = _weth;
+        collToken = _collToken;
     }
 
     function _authorizeUpgrade(
@@ -128,7 +132,6 @@ contract AddressesRegistry is
         multiTroveGetter = _vars.multiTroveGetter;
         collateralRegistry = _vars.collateralRegistry;
         usdxToken = _vars.usdxToken;
-        WETH = _vars.WETH;
         collateralConfig = _vars.collateralConfig;
         liquidationPenaltyLiquidator = _vars.liquidationPenaltyLiquidator;
         liquidationPenaltySp = _vars.liquidationPenaltySp;
@@ -156,7 +159,6 @@ contract AddressesRegistry is
             address(_vars.collateralRegistry)
         );
         emit USDXTokenAddressChanged(address(_vars.usdxToken));
-        emit WETHAddressChanged(address(_vars.WETH));
         emit CollateralConfigAddressChanged(address(_vars.collateralConfig));
         emit LiquidationPenaltyLiquidatorChanged(_vars.liquidationPenaltyLiquidator);
         emit LiquidationPenaltySpChanged(_vars.liquidationPenaltySp);

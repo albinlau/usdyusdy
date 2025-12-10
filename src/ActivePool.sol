@@ -34,15 +34,15 @@ contract ActivePool is
     string public constant NAME = "ActivePool";
 
     IERC20 public immutable collToken;
-    address public immutable borrowerOperationsAddress;
-    address public immutable troveManagerAddress;
-    address public immutable defaultPoolAddress;
+    address public borrowerOperationsAddress;
+    address public troveManagerAddress;
+    address public defaultPoolAddress;
 
-    IUSDXToken public immutable usdxToken;
+    IUSDXToken public usdxToken;
 
-    IInterestRouter public immutable interestRouter;
-    IUSDXRewardsReceiver public immutable stabilityPool;
-    ICollateralConfig public immutable collateralConfig;
+    IInterestRouter public interestRouter;
+    IUSDXRewardsReceiver public stabilityPool;
+    ICollateralConfig public collateralConfig;
 
     uint256 internal collBalance; // deposited coll tracker
 
@@ -96,6 +96,28 @@ contract ActivePool is
 
         // Allow funds movements between Liquity contracts
         collToken.approve(defaultPoolAddress, type(uint256).max);
+    }
+
+    function updateByAddressRegistry(
+        IAddressesRegistry _addressesRegistry
+    ) external onlyOwner {
+        borrowerOperationsAddress = address(
+            _addressesRegistry.borrowerOperations()
+        );
+        troveManagerAddress = address(_addressesRegistry.troveManager());
+        stabilityPool = IUSDXRewardsReceiver(
+            _addressesRegistry.stabilityPool()
+        );
+        collateralConfig = _addressesRegistry.collateralConfig();
+        defaultPoolAddress = address(_addressesRegistry.defaultPool());
+        interestRouter = _addressesRegistry.interestRouter();
+        usdxToken = _addressesRegistry.usdxToken();
+
+        emit CollTokenAddressChanged(address(collToken));
+        emit BorrowerOperationsAddressChanged(borrowerOperationsAddress);
+        emit TroveManagerAddressChanged(troveManagerAddress);
+        emit StabilityPoolAddressChanged(address(stabilityPool));
+        emit DefaultPoolAddressChanged(defaultPoolAddress);
     }
 
     function _authorizeUpgrade(

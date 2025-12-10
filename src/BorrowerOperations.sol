@@ -126,7 +126,7 @@ contract BorrowerOperations is
 
     constructor(
         IAddressesRegistry _addressesRegistry
-    ) AddRemoveManagers(_addressesRegistry) LiquityBase(_addressesRegistry) {
+    ) {
         _disableInitializers();
 
         // This makes impossible to open a trove with zero withdrawn USDX
@@ -140,6 +140,43 @@ contract BorrowerOperations is
         SCR = _addressesRegistry.SCR();
         MCR = _addressesRegistry.MCR();
 
+//        troveManager = _addressesRegistry.troveManager();
+//        gasPoolAddress = _addressesRegistry.gasPoolAddress();
+//        collSurplusPool = _addressesRegistry.collSurplusPool();
+//        sortedTroves = _addressesRegistry.sortedTroves();
+//        usdxToken = _addressesRegistry.usdxToken();
+//        collateralConfig = _addressesRegistry.collateralConfig();
+//
+//        emit TroveManagerAddressChanged(address(troveManager));
+//        emit GasPoolAddressChanged(gasPoolAddress);
+//        emit CollSurplusPoolAddressChanged(address(collSurplusPool));
+//        emit SortedTrovesAddressChanged(address(sortedTroves));
+//        emit USDXTokenAddressChanged(address(usdxToken));
+    }
+
+    function initialize(address initialOwner, IAddressesRegistry _addressesRegistry) public initializer {
+        __Ownable_init();
+        __LiquityBase_init(_addressesRegistry);
+        __AddRemoveManagers_init(_addressesRegistry);
+        transferOwnership(initialOwner);
+        // Allow funds movements between Liquity contracts
+        collToken.approve(address(activePool), type(uint256).max);
+    }
+
+    function updateByAddressRegistry(
+        IAddressesRegistry _addressesRegistry
+    ) external onlyOwner {
+        activePool = _addressesRegistry.activePool();
+        defaultPool = _addressesRegistry.defaultPool();
+        priceFeed = _addressesRegistry.priceFeed();
+
+        emit ActivePoolAddressChanged(address(activePool));
+        emit DefaultPoolAddressChanged(address(defaultPool));
+        emit PriceFeedAddressChanged(address(priceFeed));
+
+        troveNFT = _addressesRegistry.troveNFT();
+        emit TroveNFTAddressChanged(address(troveNFT));
+
         troveManager = _addressesRegistry.troveManager();
         gasPoolAddress = _addressesRegistry.gasPoolAddress();
         collSurplusPool = _addressesRegistry.collSurplusPool();
@@ -152,13 +189,6 @@ contract BorrowerOperations is
         emit CollSurplusPoolAddressChanged(address(collSurplusPool));
         emit SortedTrovesAddressChanged(address(sortedTroves));
         emit USDXTokenAddressChanged(address(usdxToken));
-    }
-
-    function initialize(address initialOwner) public initializer {
-        __Ownable_init();
-        transferOwnership(initialOwner);
-        // Allow funds movements between Liquity contracts
-        collToken.approve(address(activePool), type(uint256).max);
     }
 
     function _authorizeUpgrade(

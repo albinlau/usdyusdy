@@ -29,8 +29,8 @@ contract DefaultPool is
     string public constant NAME = "DefaultPool";
 
     IERC20 public immutable collToken;
-    address public immutable troveManagerAddress;
-    address public immutable activePoolAddress;
+    address public troveManagerAddress;
+    address public activePoolAddress;
     uint256 internal collBalance; // deposited Coll tracker
     uint256 internal USDXDebt; // debt
 
@@ -57,6 +57,16 @@ contract DefaultPool is
         transferOwnership(initialOwner);
         // Allow funds movements between Liquity contracts
         collToken.approve(activePoolAddress, type(uint256).max);
+    }
+
+    function updateByAddressRegistry(
+        IAddressesRegistry _addressesRegistry
+    ) external onlyOwner {
+        troveManagerAddress = address(_addressesRegistry.troveManager());
+        activePoolAddress = address(_addressesRegistry.activePool());
+
+        emit TroveManagerAddressChanged(troveManagerAddress);
+        emit ActivePoolAddressChanged(activePoolAddress);
     }
 
     function _authorizeUpgrade(

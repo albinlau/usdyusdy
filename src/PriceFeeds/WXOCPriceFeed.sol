@@ -51,7 +51,7 @@ contract WXOCPriceFeed is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ma
         __Ownable_init();
         __MainnetPriceFeedBase_init(_stalenessThreshold, _borrowerOperationsAddress);
 
-        transferOwnership(msg.sender);
+        transferOwnership(_initialOwner);
 
         priceFeeder = _priceFeeder;
         signatureValidity = _signatureValidity;
@@ -59,6 +59,10 @@ contract WXOCPriceFeed is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ma
         priceSource = PriceSource.primary;
         lastFeedTimestamp = block.timestamp;
         lastGoodPrice = _initialPrice;
+    }
+
+    function updateBorrowerOperations(IBorrowerOperations _borrowerOperations) external onlyOwner {
+        borrowerOperations = _borrowerOperations;
     }
 
     function _authorizeUpgrade(

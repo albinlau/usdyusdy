@@ -2,22 +2,22 @@
 
 pragma solidity 0.8.28;
 
+import "./Dependencies/LiquityBase.sol";
+
+import "./Interfaces/IAddressesRegistry.sol";
+import "./Interfaces/ICollSurplusPool.sol";
+import "./Interfaces/ICollateralConfig.sol";
+import "./Interfaces/ICollateralRegistry.sol";
+import "./Interfaces/ISortedTroves.sol";
+import "./Interfaces/IStabilityPool.sol";
+import "./Interfaces/ITroveEvents.sol";
+import "./Interfaces/ITroveManager.sol";
+import "./Interfaces/ITroveNFT.sol";
+import "./Interfaces/IUSDXToken.sol";
+import "./Interfaces/IWETH.sol";
 import "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
 import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
 import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
-
-import "./Interfaces/ITroveManager.sol";
-import "./Interfaces/IAddressesRegistry.sol";
-import "./Interfaces/IStabilityPool.sol";
-import "./Interfaces/ICollSurplusPool.sol";
-import "./Interfaces/IUSDXToken.sol";
-import "./Interfaces/ISortedTroves.sol";
-import "./Interfaces/ITroveEvents.sol";
-import "./Interfaces/ITroveNFT.sol";
-import "./Interfaces/ICollateralRegistry.sol";
-import "./Interfaces/ICollateralConfig.sol";
-import "./Interfaces/IWETH.sol";
-import "./Dependencies/LiquityBase.sol";
 
 contract TroveManager is
     Initializable,
@@ -40,7 +40,7 @@ contract TroveManager is
     ICollateralRegistry internal collateralRegistry;
     ICollateralConfig public collateralConfig;
     // Wrapped ETH for liquidation reserve (gas compensation)
-    IWETH internal immutable WETH;
+    IWETH internal WETH;
 
     // Critical system collateral ratio. If the system's total collateral ratio (TCR) falls below the CCR, some borrowing operation restrictions are applied
     uint256 public immutable CCR;
@@ -182,14 +182,12 @@ contract TroveManager is
 
     constructor(
         IAddressesRegistry _addressesRegistry
-    ) LiquityBase(_addressesRegistry) {
+    ) {
         _disableInitializers();
 
         CCR = _addressesRegistry.CCR();
         MCR = _addressesRegistry.MCR();
         SCR = _addressesRegistry.SCR();
-
-        WETH = _addressesRegistry.WETH();
     }
 
     function initialize(
@@ -197,7 +195,50 @@ contract TroveManager is
         IAddressesRegistry _addressesRegistry
     ) public initializer {
         __Ownable_init();
+        __LiquityBase_init(_addressesRegistry);
         transferOwnership(initialOwner);
+        WETH = _addressesRegistry.WETH();
+
+        troveNFT = _addressesRegistry.troveNFT();
+        borrowerOperations = _addressesRegistry.borrowerOperations();
+        stabilityPool = _addressesRegistry.stabilityPool();
+        gasPoolAddress = _addressesRegistry.gasPoolAddress();
+        collSurplusPool = _addressesRegistry.collSurplusPool();
+        usdxToken = _addressesRegistry.usdxToken();
+        sortedTroves = _addressesRegistry.sortedTroves();
+        collateralRegistry = _addressesRegistry.collateralRegistry();
+        collateralConfig = _addressesRegistry.collateralConfig();
+
+        liquidationPenaltySp = _addressesRegistry.liquidationPenaltySp();
+        liquidationPenaltyLiquidator = _addressesRegistry
+            .liquidationPenaltyLiquidator();
+        liquidationPenaltyDao = _addressesRegistry.liquidationPenaltyDao();
+        liquidationPenaltyDaoRecipient = _addressesRegistry.liquidationPenaltyDaoRecipient();
+
+        emit TroveNFTAddressChanged(address(troveNFT));
+        emit BorrowerOperationsAddressChanged(address(borrowerOperations));
+        emit StabilityPoolAddressChanged(address(stabilityPool));
+        emit GasPoolAddressChanged(gasPoolAddress);
+        emit CollSurplusPoolAddressChanged(address(collSurplusPool));
+        emit USDXTokenAddressChanged(address(usdxToken));
+        emit SortedTrovesAddressChanged(address(sortedTroves));
+        emit CollateralRegistryAddressChanged(address(collateralRegistry));
+        emit LiquidationPenaltyLiquidatorChanged(liquidationPenaltyLiquidator);
+        emit LiquidationPenaltySpChanged(liquidationPenaltySp);
+        emit LiquidationPenaltyDaoChanged(liquidationPenaltyDao);
+        emit LiquidationPenaltyDaoRecipientChanged(liquidationPenaltyDaoRecipient);
+    }
+
+    function updateByAddressRegistry(
+        IAddressesRegistry _addressesRegistry
+    ) external onlyOwner {
+        activePool = _addressesRegistry.activePool();
+        defaultPool = _addressesRegistry.defaultPool();
+        priceFeed = _addressesRegistry.priceFeed();
+
+        emit ActivePoolAddressChanged(address(activePool));
+        emit DefaultPoolAddressChanged(address(defaultPool));
+        emit PriceFeedAddressChanged(address(priceFeed));
 
         troveNFT = _addressesRegistry.troveNFT();
         borrowerOperations = _addressesRegistry.borrowerOperations();

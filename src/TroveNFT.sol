@@ -22,11 +22,11 @@ contract TroveNFT is
     ERC721EnumerableUpgradeable,
     ITroveNFT
 {
-    ITroveManager public immutable troveManager;
+    ITroveManager public troveManager;
     IERC20Metadata internal immutable collToken;
-    IUSDXToken internal immutable usdxToken;
+    IUSDXToken internal usdxToken;
 
-    IMetadataNFT public immutable metadataNFT;
+    IMetadataNFT public metadataNFT;
 
     constructor(IAddressesRegistry _addressesRegistry) {
         _disableInitializers();
@@ -51,6 +51,14 @@ contract TroveNFT is
         __ERC721Enumerable_init();
         __Ownable_init();
         transferOwnership(initialOwner);
+    }
+
+    function updateByAddressRegistry(
+        IAddressesRegistry _addressesRegistry
+    ) external onlyOwner {
+        troveManager = _addressesRegistry.troveManager();
+        metadataNFT = _addressesRegistry.metadataNFT();
+        usdxToken = _addressesRegistry.usdxToken();
     }
 
     function _authorizeUpgrade(
