@@ -129,9 +129,6 @@ contract BorrowerOperations is
     ) {
         _disableInitializers();
 
-        // This makes impossible to open a trove with zero withdrawn USDX
-        assert(MIN_DEBT > 0);
-
         collToken = _addressesRegistry.collToken();
 
         WETH = _addressesRegistry.WETH();
@@ -139,19 +136,6 @@ contract BorrowerOperations is
         CCR = _addressesRegistry.CCR();
         SCR = _addressesRegistry.SCR();
         MCR = _addressesRegistry.MCR();
-
-//        troveManager = _addressesRegistry.troveManager();
-//        gasPoolAddress = _addressesRegistry.gasPoolAddress();
-//        collSurplusPool = _addressesRegistry.collSurplusPool();
-//        sortedTroves = _addressesRegistry.sortedTroves();
-//        usdxToken = _addressesRegistry.usdxToken();
-//        collateralConfig = _addressesRegistry.collateralConfig();
-//
-//        emit TroveManagerAddressChanged(address(troveManager));
-//        emit GasPoolAddressChanged(gasPoolAddress);
-//        emit CollSurplusPoolAddressChanged(address(collSurplusPool));
-//        emit SortedTrovesAddressChanged(address(sortedTroves));
-//        emit USDXTokenAddressChanged(address(usdxToken));
     }
 
     function initialize(address initialOwner, IAddressesRegistry _addressesRegistry) public initializer {
@@ -159,8 +143,6 @@ contract BorrowerOperations is
         __LiquityBase_init(_addressesRegistry);
         __AddRemoveManagers_init(_addressesRegistry);
         transferOwnership(initialOwner);
-        // Allow funds movements between Liquity contracts
-        collToken.approve(address(activePool), type(uint256).max);
     }
 
     function updateByAddressRegistry(
@@ -173,6 +155,9 @@ contract BorrowerOperations is
         emit ActivePoolAddressChanged(address(activePool));
         emit DefaultPoolAddressChanged(address(defaultPool));
         emit PriceFeedAddressChanged(address(priceFeed));
+
+        // Allow funds movements between Liquity contracts
+        collToken.approve(address(activePool), type(uint256).max);
 
         troveNFT = _addressesRegistry.troveNFT();
         emit TroveNFTAddressChanged(address(troveNFT));
@@ -496,8 +481,8 @@ contract BorrowerOperations is
 
         // When the adjustment is a debt repayment, check it's a valid amount and that the caller has enough USDX
         if (_troveChange.debtDecrease > 0) {
-            uint256 maxRepayment = vars.trove.entireDebt > MIN_DEBT
-                ? vars.trove.entireDebt - MIN_DEBT
+            uint256 maxRepayment = vars.trove.entireDebt > troveManager.minDebt()
+                ? vars.trove.entireDebt - troveManager.minDebt()
                 : 0;
             if (_troveChange.debtDecrease > maxRepayment) {
                 _troveChange.debtDecrease = maxRepayment;
@@ -532,7 +517,7 @@ contract BorrowerOperations is
         _troveChange.appliedRedistCollGain = vars.trove.redistCollGain;
 
         // Make sure the Trove doesn't end up zombie
-        // Now the max repayment is capped to stay above MIN_DEBT, so this only applies to adjustZombieTrove
+        // Now the max repayment is capped to stay above troveManager.minDebt(), so this only applies to adjustZombieTrove
         _requireAtLeastMinDebt(vars.newDebt);
 
         vars.newICR = LiquityMath._computeCR(
@@ -643,7 +628,7 @@ contract BorrowerOperations is
         // If the trove was zombie, and now it’s not anymore, put it back in the list
         if (
             _checkTroveIsZombie(troveManagerCached, _troveId) &&
-            trove.entireDebt >= MIN_DEBT
+            trove.entireDebt >= troveManager.minDebt()
         ) {
             troveManagerCached.setTroveStatusToActive(_troveId);
             _reInsertIntoSortedTroves(
@@ -919,8 +904,8 @@ contract BorrowerOperations is
         }
     }
 
-    function _requireAtLeastMinDebt(uint256 _debt) internal pure {
-        if (_debt < MIN_DEBT) {
+    function _requireAtLeastMinDebt(uint256 _debt) internal view {
+        if (_debt < troveManager.minDebt()) {
             revert DebtBelowMin();
         }
     }

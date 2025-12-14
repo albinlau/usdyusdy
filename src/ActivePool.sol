@@ -95,7 +95,7 @@ contract ActivePool is
         transferOwnership(initialOwner);
 
         // Allow funds movements between Liquity contracts
-        collToken.approve(defaultPoolAddress, type(uint256).max);
+//        collToken.approve(defaultPoolAddress, type(uint256).max);
     }
 
     function updateByAddressRegistry(
@@ -110,6 +110,8 @@ contract ActivePool is
         );
         collateralConfig = _addressesRegistry.collateralConfig();
         defaultPoolAddress = address(_addressesRegistry.defaultPool());
+        // Allow funds movements between Liquity contracts
+        collToken.approve(defaultPoolAddress, type(uint256).max);
         interestRouter = _addressesRegistry.interestRouter();
         usdxToken = _addressesRegistry.usdxToken();
 

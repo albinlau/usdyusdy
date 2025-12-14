@@ -48,8 +48,6 @@ contract AddRemoveManagers is Initializable, IAddRemoveManagers {
         address _newReceiver
     );
 
-    constructor() {}
-
     function __AddRemoveManagers_init(IAddressesRegistry _addressesRegistry) internal onlyInitializing {
         troveNFT = _addressesRegistry.troveNFT();
         emit TroveNFTAddressChanged(address(troveNFT));

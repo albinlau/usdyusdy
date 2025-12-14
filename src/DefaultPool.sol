@@ -56,7 +56,7 @@ contract DefaultPool is
         __Ownable_init();
         transferOwnership(initialOwner);
         // Allow funds movements between Liquity contracts
-        collToken.approve(activePoolAddress, type(uint256).max);
+//        collToken.approve(activePoolAddress, type(uint256).max);
     }
 
     function updateByAddressRegistry(
@@ -67,6 +67,9 @@ contract DefaultPool is
 
         emit TroveManagerAddressChanged(troveManagerAddress);
         emit ActivePoolAddressChanged(activePoolAddress);
+
+        // Allow funds movements between Liquity contracts
+        collToken.approve(activePoolAddress, type(uint256).max);
     }
 
     function _authorizeUpgrade(

@@ -3,6 +3,7 @@
 pragma solidity 0.8.28;
 
 import "./Dependencies/LiquityBase.sol";
+import "./Dependencies/LiquidationLib.sol";
 
 import "./Interfaces/IAddressesRegistry.sol";
 import "./Interfaces/ICollSurplusPool.sol";
@@ -50,6 +51,9 @@ contract TroveManager is
     // Shutdown system collateral ratio. If the system's total collateral ratio (TCR) for a given collateral falls below the SCR,
     // the protocol triggers the shutdown of the borrow market and permanently disables all borrowing operations except for closing Troves.
     uint256 internal immutable SCR;
+
+    // Minimum amount of net USDX debt a trove must have
+    uint256 public immutable minDebt;
 
     // Liquidation penalty for troves liquidator
     uint256 public liquidationPenaltyLiquidator;
@@ -181,13 +185,19 @@ contract TroveManager is
     event LiquidationPenaltyDaoRecipientChanged(address _liquidationPenaltyDaoRecipient);
 
     constructor(
-        IAddressesRegistry _addressesRegistry
+        IAddressesRegistry _addressesRegistry,
+        uint256 _minDebt
     ) {
         _disableInitializers();
+
+        // This makes impossible to open a trove with zero withdrawn USDX
+        assert(_minDebt > 0);
 
         CCR = _addressesRegistry.CCR();
         MCR = _addressesRegistry.MCR();
         SCR = _addressesRegistry.SCR();
+
+        minDebt = _minDebt;
     }
 
     function initialize(
@@ -363,18 +373,6 @@ contract TroveManager is
         });
     }
 
-    // Return the amount of Coll to be drawn from a trove's collateral and sent as gas compensation.
-    function _getCollGasCompensation(
-        uint256 _coll
-    ) internal view returns (uint256) {
-        // _entireDebt should never be zero, but we add the condition defensively to avoid an unexpected revert
-        return
-            LiquityMath._min(
-                _coll * liquidationPenaltyLiquidator / DECIMAL_PRECISION,
-                COLL_GAS_COMPENSATION_CAP
-            );
-    }
-
     /* In a full liquidation, returns the values for a trove's coll and debt to be offset, and coll and debt to be
      * redistributed to active troves.
      */
@@ -396,77 +394,15 @@ contract TroveManager is
             uint256 collSurplus
         )
     {
-        uint256 collSPPortion;
-        /*
-         * Offset as much debt & collateral as possible against the Stability Pool, and redistribute the remainder
-         * between all active troves.
-         *
-         *  If the trove's debt is larger than the deposited USDX in the Stability Pool:
-         *
-         *  - Offset an amount of the trove's debt equal to the USDX in the Stability Pool
-         *  - Send a fraction of the trove's collateral to the Stability Pool, equal to the fraction of its offset debt
-         *
-         */
-        if (_usdxInSPForOffsets > 0) {
-            debtToOffset = LiquityMath._min(
-                _entireTroveDebt,
-                _usdxInSPForOffsets
-            );
-            collSPPortion =
-                (_entireTroveColl * debtToOffset) /
-                _entireTroveDebt;
-
-            collGasCompensation = _getCollGasCompensation(collSPPortion);
-
-            (collToSendToSP, collSurplus) = _getCollPenaltyAndSurplus(
-                collSPPortion,
-                debtToOffset,
-                liquidationPenaltySp,
-                _price
-            );
-        }
-
-        // Redistribution
-        debtToRedistribute = _entireTroveDebt - debtToOffset;
-        if (debtToRedistribute > 0) {
-            uint256 collRedistributionPortion = _entireTroveColl -
-                collSPPortion;
-            if (collRedistributionPortion > 0) {
-                (collToRedistribute, collSurplus) = _getCollPenaltyAndSurplus(
-                    collRedistributionPortion + collSurplus, // Coll surplus from offset can be eaten up by red. penalty
-                    debtToRedistribute,
-                    liquidationPenaltyLiquidator + liquidationPenaltySp, // _penaltyRatio
-                    _price
-                );
-            }
-        }
-
-        if (collSurplus > 0) {
-            uint256 collToDaoNeed = _entireTroveDebt * liquidationPenaltyDao / _price;
-            collToDao = LiquityMath._min(
-                collToDaoNeed,
-                collSurplus
-            );
-            collSurplus = collSurplus - collToDao;
-        }
-        // assert(_collToLiquidate == collToSendToSP + collToRedistribute + collSurplus);
-    }
-
-    function _getCollPenaltyAndSurplus(
-        uint256 _collToLiquidate,
-        uint256 _debtToLiquidate,
-        uint256 _penaltyRatio,
-        uint256 _price
-    ) internal pure returns (uint256 seizedColl, uint256 collSurplus) {
-        uint256 maxSeizedColl = (_debtToLiquidate *
-            (DECIMAL_PRECISION + _penaltyRatio)) / _price;
-        if (_collToLiquidate > maxSeizedColl) {
-            seizedColl = maxSeizedColl;
-            collSurplus = _collToLiquidate - maxSeizedColl;
-        } else {
-            seizedColl = _collToLiquidate;
-            collSurplus = 0;
-        }
+        return LiquidationLib._getOffsetAndRedistributionVals(
+            _entireTroveDebt,
+            _entireTroveColl,
+            _usdxInSPForOffsets,
+            _price,
+            liquidationPenaltySp,
+            liquidationPenaltyLiquidator,
+            liquidationPenaltyDao
+        );
     }
 
     /*
@@ -765,7 +701,7 @@ contract TroveManager is
         );
 
         // Make Trove zombie if it's tiny (and it wasn’t already), in order to prevent griefing future (normal, sequential) redemptions
-        if (newDebt < MIN_DEBT) {
+        if (newDebt < minDebt) {
             if (!_singleRedemption.isZombieTrove) {
                 Troves[_singleRedemption.troveId].status = Status.zombie;
                 sortedTroves.remove(_singleRedemption.troveId);
@@ -779,7 +715,7 @@ contract TroveManager is
             }
         }
         // Note: technically, it could happen that the Trove pointed to by `lastZombieTroveId` ends up with
-        // newDebt >= MIN_DEBT thanks to USDX debt redistribution, which means it _could_ be made active again,
+        // newDebt >= minDebt thanks to USDX debt redistribution, which means it _could_ be made active again,
         // however we don't do that here, as it would require hints for re-insertion into `SortedTroves`.
     }
 

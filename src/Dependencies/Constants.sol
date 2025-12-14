@@ -36,9 +36,6 @@ uint256 constant LIQUIDATION_PENALTY_REDISTRIBUTION_SETH = 20 * _1pct;
 uint256 constant COLL_GAS_COMPENSATION_DIVISOR = 200; // dividing by 200 yields 0.5%
 uint256 constant COLL_GAS_COMPENSATION_CAP = 2 ether; // Max coll gas compensation capped at 2 ETH
 
-// Minimum amount of net USDX debt a trove must have
-uint256 constant MIN_DEBT = 2000e18;
-
 uint256 constant MIN_ANNUAL_INTEREST_RATE = _1pct / 2; // 0.5%
 uint256 constant MAX_ANNUAL_INTEREST_RATE = 250 * _1pct;
 
@@ -69,5 +66,4 @@ uint256 constant MIN_USDX_IN_SP = 1e18;
 // Dummy contract that lets legacy Hardhat tests query some of the constants
 contract Constants {
     uint256 public constant _ETH_GAS_COMPENSATION = ETH_GAS_COMPENSATION;
-    uint256 public constant _MIN_DEBT = MIN_DEBT;
 }

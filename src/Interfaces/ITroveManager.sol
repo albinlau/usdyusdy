@@ -98,6 +98,8 @@ interface ITroveManager is ILiquityBase {
 
     function getTroveStatus(uint256 _troveId) external view returns (Status);
 
+    function minDebt() external view returns (uint256);
+
     // -- permissioned functions called by BorrowerOperations
 
     function onOpenTrove(

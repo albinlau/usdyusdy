@@ -36,9 +36,9 @@ contract GasPool is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         __Ownable_init();
         transferOwnership(initialOwner);
         // Allow BorrowerOperations to refund gas compensation
-        WETH.approve(borrowerOperationsAddress, type(uint256).max);
+//        WETH.approve(borrowerOperationsAddress, type(uint256).max);
         // Allow TroveManager to pay gas compensation to liquidator
-        WETH.approve(troveManagerAddress, type(uint256).max);
+//        WETH.approve(troveManagerAddress, type(uint256).max);
     }
 
     function updateByAddressRegistry(
